@@ -62,7 +62,31 @@ class DiscountedMeanPayoffGame:
 
         edges = np.where(self.edges != mini, self.edges+W, self.edges)
 
-        # TODO Fig. 3
+        f3 = np.count_nonzero(self.edges != mini)
+
+        vertices = self.vertices + f3
+
+        f3pos = np.where(self.edges != mini)
+
+        denominator = np.max(np.where(edges != mini, edges, 0))
+
+        ssg_edges = np.full((vertices,vertices+2), False)
+
+        owner = np.hstack((self.owner, np.full((f3), 2, dtype=np.uint8)))
+
+        avg_chance = np.zeros((f3, vertices+2), dtype=np.uint32)
+
+        for i,edge in enumerate(zip(f3pos[0],f3pos[1])):
+            ssg_edges[edge[0], i+self.vertices] = True
+            ssg_edges[i+self.vertices, edge[1]] = True
+            ssg_edges[i+self.vertices, -1] = True
+            ssg_edges[i+self.vertices, -2] = True
+            lambda_chance = int(denominator*discount/(1-discount))
+            avg_chance[i, edge[1]] = lambda_chance
+            avg_chance[i, -2] = denominator-edges[edge]
+            avg_chance[i, -1] = edges[edge]
+
+        return SimpleStochasticGame(vertices, owner, ssg_edges, avg_chance)
 
 class SimpleStochasticGame:
 
