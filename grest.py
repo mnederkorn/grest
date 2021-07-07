@@ -5,6 +5,8 @@ from graphviz import Digraph
 from fractions import Fraction
 from ortools.linear_solver import pywraplp
 
+import time
+
 class ParityGame:
 
     def __init__(self, vertices, owner, edges, priority):
@@ -97,7 +99,7 @@ class DiscountedMeanPayoffGame:
             ssg_edges[i+self.vertices, edge[1]] = True
             ssg_edges[i+self.vertices, -1] = True
             ssg_edges[i+self.vertices, -2] = True
-            lambda_chance = int(denominator*discount/(1-discount))
+            lambda_chance = int(denominator*self.discount/(1-self.discount))
             avg_chance[i, edge[1]] = lambda_chance
             avg_chance[i, -2] = denominator-edges[edge]
             avg_chance[i, -1] = edges[edge]
@@ -109,7 +111,7 @@ class DiscountedMeanPayoffGame:
         mini = np.iinfo(self.edges.dtype).min
 
         cur = np.zeros(self.vertices).reshape((-1,1))
-        for _ in range(100*2):
+        for _ in range(100):
 
             old = np.array(cur)
 
@@ -117,21 +119,7 @@ class DiscountedMeanPayoffGame:
 
             cur = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
 
-            err = cur-old
-
-            print(cur)
-
-            # mi = np.amin(err)
-            # ma = np.amax(err)
-
-            # print(mi,np.frexp(mi)) if -mi>ma else print(ma,np.frexp(ma))
-
-    def set_strat(self, player, strat):
-
-        if player:
-            self.strat_0 = strat
-        else:
-            self.strat_1 = strat
+        print([f"{v_n:.3f}" for v_n in cur])
 
 class SimpleStochasticGame:
 
@@ -144,7 +132,7 @@ class SimpleStochasticGame:
 
 if __name__ == '__main__':
 
-    N = 10
+    N = 2**5
     p = 0.3125
 
     p=((p*N)-1)/(N-1)
@@ -210,42 +198,49 @@ if __name__ == '__main__':
     # ssg = SimpleStochasticGame(vertices, owner, edges, avg_chance)
     # print(ssg)
 
-
-    # vertices = N
-    # owner = np.random.choice([False, True], size=(vertices))
-    # edges_exist = np.zeros((vertices,vertices), dtype=bool)
-    # for n in edges_exist:
-    #     rng = np.random.randint(vertices)
-    #     n[rng] = True
-    #     n[:rng] = np.random.choice([True, False], size=rng, p=[p, 1-p])
-    #     n[rng+1:] = np.random.choice([True, False], size=vertices-(rng+1), p=[p, 1-p])
-    # edges_value = np.random.randint(-10, 11, size=(vertices,vertices))
-    # mini = np.iinfo(edges_value.dtype).min
-    # edges = np.where(edges_exist, edges_value, mini)
-    # threshold = np.random.randint(-vertices,vertices, size=(1))
-    # discount = np.random.rand(1)
-    # dpg = DiscountedMeanPayoffGame(vertices, owner, edges, threshold, discount)
+    vertices = N
+    owner = np.random.choice([False, True], size=(vertices))
+    edges_exist = np.zeros((vertices,vertices), dtype=bool)
+    for n in edges_exist:
+        rng = np.random.randint(vertices)
+        n[rng] = True
+        n[:rng] = np.random.choice([True, False], size=rng, p=[p, 1-p])
+        n[rng+1:] = np.random.choice([True, False], size=vertices-(rng+1), p=[p, 1-p])
+    edges_value = np.random.randint(-10, 11, size=(vertices,vertices))
+    mini = np.iinfo(edges_value.dtype).min
+    edges = np.where(edges_exist, edges_value, mini)
+    threshold = np.random.randint(-vertices,vertices, size=(1))
+    discount = np.random.rand(1)
+    dpg = DiscountedMeanPayoffGame(vertices, owner, edges, threshold, discount)
 
     # filename = os.path.join(r"C:\ata\uni\master\grest\grest", "test.bin")
     # file = open(filename, "wb")
     # pickle.dump(dpg, file)
     # file.close()
 
-    filename2 = os.path.join(r"C:\ata\uni\master\grest\grest", "save2inf.bin")
-    file = open(filename2,"rb")
-    dpg = pickle.load(file)
-    file.close()
+    # filename2 = os.path.join(r"C:\ata\uni\master\grest\grest", "save2inf.bin")
+    # file = open(filename2,"rb")
+    # dpg = pickle.load(file)
+    # file.close()
 
-    view = Digraph(format="png")
-    for i,node in enumerate(dpg.owner):
-        if not node:
-            view.node(str(i), shape="square")
-        else:
-            view.node(str(i), shape="circle")
-    idx = np.where(dpg.edges != np.iinfo(dpg.edges.dtype).min)
-    for j,_ in enumerate(idx[0]):
-        view.edge(str(idx[0][j]),str(idx[1][j]),str(dpg.edges[idx[0][j],idx[1][j]]))
-    view.render(filename=os.path.join(r"C:\ata\uni\master\grest\grest", "test"), view=False, cleanup=True)
+    # filename = os.path.join(r"C:\ata\uni\master\grest\grest", "save4inf.bin")
+    # file = open(filename, "wb")
+    # pickle.dump(dpg, file)
+    # file.close()
+    # exit()
+
+    # view = Digraph(format="png")
+    # for i,node in enumerate(dpg.owner):
+    #     if not node:
+    #         view.node(str(i), shape="square")
+    #     else:
+    #         view.node(str(i), shape="circle")
+    # idx = np.where(dpg.edges != np.iinfo(dpg.edges.dtype).min)
+    # for j,_ in enumerate(idx[0]):
+    #     view.edge(str(idx[0][j]),str(idx[1][j]),str(dpg.edges[idx[0][j],idx[1][j]]))
+    # view.render(filename=os.path.join(r"C:\ata\uni\master\grest\grest", "test"), view=False, cleanup=True)
+
+    ################
 
     p0 = np.where(dpg.owner==False)[0]
     p1 = np.where(dpg.owner==True)[0]
@@ -260,11 +255,11 @@ if __name__ == '__main__':
 
     strat = rnd_strat
 
-    strats = strat.reshape(1,len(p0),2)
+    strat_hist = []
 
-    values = np.empty((0,dpg.vertices))
+    while not hash(strat.tobytes()) in strat_hist:
 
-    while True:
+        strat_hist.append(hash(strat.tobytes()))
 
         weights = dpg.edges[np.where(dpg.edges!=mini)]
         W = max(abs(np.amin(weights)),abs(np.amax(weights)))
@@ -274,7 +269,7 @@ if __name__ == '__main__':
         v = [solver.NumVar(float(-W), float(W), str(x)) for x in range(dpg.vertices)]
 
         for s,t in strat:
-            x=solver.Add(v[s] == (1-float(dpg.discount))*float(dpg.edges[s,t])+float(dpg.discount)*v[t])
+            solver.Add(v[s] == (1-float(dpg.discount))*float(dpg.edges[s,t])+float(dpg.discount)*v[t])
 
         for s in p1:
             for t in np.where(dpg.edges[s]!=mini)[0]:
@@ -289,26 +284,104 @@ if __name__ == '__main__':
 
         status = solver.Solve()
 
-        # for v_n in v:
-        #     print(f"{v_n.name()} = {v_n.solution_value()}")
+        # print([f"{v_n.solution_value():.2f}" for v_n in v])
 
-        new_strat = np.empty(0, dtype=np.int64)
+        strat = np.empty(0, dtype=np.int64)
 
         for s in p0:
             idx = np.where(dpg.edges[s]!=mini)[0]
-            new = np.argmax([v[t].solution_value() for t in idx])
-            new_strat = np.hstack((new_strat, idx[new]))
+            new = np.argmax([(1-dpg.discount)*dpg.edges[s,t]+dpg.discount*v[t].solution_value() for t in idx])
+            strat = np.hstack((strat, idx[new]))
 
-        new_strat = np.transpose(np.vstack((p0,new_strat)))
+        strat = np.transpose(np.vstack((p0,strat)))
 
-        values = np.vstack((values,np.array([v_n.solution_value() for v_n in v])))
+    print(strat)
 
-        strat = new_strat
+    print([f"{v_n.solution_value():.3f}" for v_n in v])
 
-        strats = np.vstack((strats,strat.reshape(1,len(p0),2)))
+    print(dpg.solve())
 
-        if strats.shape != np.unique(strats,axis=0).shape:
-            break
+    ################
 
-    print(strats)
-    print(values)
+    # ssg = dpg.to_ssg()
+
+    # view = Digraph(format="png")
+    # for i,node in enumerate(ssg.owner):
+    #     if node==0:
+    #         view.node(str(i), shape="square")
+    #     elif node==1:
+    #         view.node(str(i), shape="circle")
+    #     else:
+    #         view.node(str(i), shape="diamond")
+    # view.node(str(ssg.vertices), label="MIN", shape="triangle")
+    # view.node(str(ssg.vertices+1), label="MAX", shape="triangle")
+
+    # normal = ssg.vertices-ssg.avg_chance.shape[0]
+
+    # idx = np.where(ssg.edges[:normal])
+    # for s,t in zip(idx[0],idx[1]):
+    #     view.edge(str(s),str(t))
+
+    # idx = np.where(ssg.edges[normal:])
+    # for s,t in zip(idx[0],idx[1]):
+    #     view.edge(str(normal+s),str(t),f"{(ssg.avg_chance[s,t]/np.sum(ssg.avg_chance[s])):.3f}")
+
+    # view.render(filename=os.path.join(r"C:\ata\uni\master\grest\grest", "test"), view=False, cleanup=True)
+
+    # p0 = np.where(ssg.owner==0)[0]
+    # p1 = np.where(ssg.owner==1)[0]
+    # p2 = np.where(ssg.owner==2)[0]
+
+    # rnd_strat = np.apply_along_axis(lambda x: np.random.choice(np.where(x)[0]), 1, ssg.edges[p0])
+
+    # rnd_strat = np.vstack((p0,rnd_strat))
+
+    # rnd_strat = np.transpose(rnd_strat)
+
+    # strat = rnd_strat
+
+    # strat_hist = []
+
+    # while not hash(strat.tobytes()) in strat_hist:
+
+    #     strat_hist.append(hash(strat.tobytes()))
+
+    #     solver = pywraplp.Solver.CreateSolver('GLOP')
+
+    #     v = [solver.NumVar(float(0), float(1), str(x)) for x in range(ssg.vertices)]+[solver.NumVar(float(0), float(0), str(ssg.vertices+1))]+[solver.NumVar(float(1), float(1), str(ssg.vertices+2))]
+
+    #     for s,t in strat:
+    #         solver.Add(v[s] == v[t])
+
+    #     for s in p1:
+    #         for t in np.where(ssg.edges[s])[0]:
+    #             solver.Add(v[s] <= v[t])
+
+    #     normal = ssg.vertices-ssg.avg_chance.shape[0]
+
+    #     for s in p2:
+    #         where = np.where(ssg.edges[s])[0]
+    #         su = np.sum(ssg.avg_chance[s-normal,where])
+    #         solver.Add(v[s] == ((ssg.avg_chance[s-normal,where[0]]/su)*v[where[0]]+(ssg.avg_chance[s-normal,where[1]]/su)*v[where[1]]+(ssg.avg_chance[s-normal,where[2]]/su)*v[where[2]]))
+
+    #     obj_func = v[0]
+
+    #     for v_n in v[1:]:
+    #         obj_func+=v_n
+
+    #     solver.Maximize(obj_func)
+
+    #     status = solver.Solve()
+
+    #     strat = np.empty(0, dtype=np.int64)
+
+    #     for s in p0:
+    #         idx = np.where(ssg.edges[s])[0]
+    #         new = np.argmax([v[t].solution_value() for t in idx])
+    #         strat = np.hstack((strat, idx[new]))
+
+    #     strat = np.transpose(np.vstack((p0,strat)))
+
+    # print(strat)
+
+    # print([f"{v_n.solution_value():.3f}" for v_n in v])
