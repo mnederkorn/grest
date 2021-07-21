@@ -412,6 +412,7 @@ class SimpleStochasticGame(Game):
             old = np.array(cur)
 
             edges_weight = np.tile(cur, (self.vertices,1))
+            edges_weight = np.where(self.edges, edges_weight, np.nan)
 
             cur[:-2] = np.where(self.owner == 0, np.nanmax(edges_weight, 1), cur[:-2])
             cur[:-2] = np.where(self.owner == 1, np.nanmin(edges_weight, 1), cur[:-2])
@@ -529,14 +530,14 @@ def load(target_path):
 
 if __name__ == '__main__':
 
-    n = 2**4
+    n = 2**5
 
     # outdegree of every vertex has to be >=1
     # p is taken as if this wasn't the case
     # to adjust, every vertex is given at least one outgoing edge and p is rescaled afterwards
     # expected value of outdegree of vertices stays the same but the distribution changes
     # to allow for rescaling while keeping expected value of outdegrees, p has to be 1>=p>=1/#V
-    p = 1/16
+    p = 2/16
     p=((p*n)-1)/(n-1)
 
     w=10
@@ -566,5 +567,6 @@ if __name__ == '__main__':
     strat_v = ssg.solve_strat_iter()
     # value_v = ssg.solve_value_iter()
     print([f"{(v_n*2*W)-W:.3f}" for v_n in strat_v[:dpg.vertices]])
-    print([f"{v_n:.3f}" for v_n in strat_v])
+    # print([f"{v_n:.3f}" for v_n in strat_v])
     # print([f"{v_n:.3f}" for v_n in value_v])
+    # ssg.visualise()
