@@ -7,6 +7,8 @@ from fractions import Fraction
 from ortools.linear_solver import pywraplp
 from datetime import datetime
 from itertools import *
+import math
+import timeit
 
 class Game:
 
@@ -62,7 +64,7 @@ class ParityGame(Game):
     def to_mpg(self):
 
         edges_exist = self.edges
-        edges_value = np.fromfunction(lambda x,y: -self.vertices**self.priority[x], shape=(self.vertices,self.vertices), dtype=int) 
+        edges_value = np.fromfunction(lambda x,y: -self.vertices**self.priority[x], shape=(self.vertices,self.vertices), dtype=int)
 
         mini = np.iinfo(edges_value.dtype).min
         edges = np.where(edges_exist, edges_value, mini)
@@ -77,9 +79,9 @@ class ParityGame(Game):
         view = Digraph(format="png")
         for i,(owner, priority) in enumerate(zip(self.owner, self.priority)):
             if not owner:
-                view.node(str(i), str(priority), shape="square", fontcolor="#dfdfdf")
+                view.node(str(i), str(priority), shape="square", fontcolor="#000000")
             else:
-                view.node(str(i), str(priority), shape="circle", fontcolor="#dfdfdf")
+                view.node(str(i), str(priority), shape="circle", fontcolor="#000000")
         idx = np.where(self.edges==True)
         for s,t in zip(idx[0],idx[1]):
             view.edge(str(s),str(t))
@@ -117,6 +119,44 @@ class MeanPayoffGame(Game):
         threshold = np.random.randint(-w*n,(w*n)+1, size=((1,)))
 
         return cls(vertices, owner, edges, threshold)
+
+    def solve_zwick_paterson(self):
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        empty_as_zero = np.where(self.edges != mini, self.edges, 0)
+
+        W = max(abs(np.amin(empty_as_zero)),abs(np.amax(empty_as_zero)))
+
+        a = np.zeros(self.vertices).reshape((-1,1))
+
+        k = (4*(self.vertices**3)*W)
+
+        for x in range(k):
+
+            edges_weight = np.where(self.edges != mini, self.edges+a, np.nan)
+
+            a = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
+
+        lower = (a/k)-(1/(2*self.vertices*(self.vertices-1)))
+        upper = (a/k)+(1/(2*self.vertices*(self.vertices-1)))
+
+        v = np.zeros((self.vertices),dtype=object)
+
+        for v_n in range(self.vertices):
+            br=False
+            for denominator in range(1,self.vertices+1):
+                if br: break
+                f=math.floor(lower[v_n]*denominator)
+                c=math.ceil(upper[v_n]*denominator)
+                for numerator in range(f,c+1):
+                    r=Fraction(numerator,denominator)
+                    if ((lower[v_n]<=r)&(r<=upper[v_n])):
+                        v[v_n]=r
+                        br = True
+                        break
+
+        return v
 
     def to_dpg(self):
 
@@ -255,7 +295,7 @@ class DiscountedMeanPayoffGame(Game):
 
         f3pos = np.where(self.edges != mini)
 
-        denominator = np.max(np.where(edges != mini, edges, 0))
+        denominator = np.iinfo(np.uint32).max
 
         ssg_edges = np.full((vertices,vertices+2), False)
 
@@ -268,10 +308,9 @@ class DiscountedMeanPayoffGame(Game):
             ssg_edges[i+self.vertices, edge[1]] = True
             ssg_edges[i+self.vertices, -1] = True
             ssg_edges[i+self.vertices, -2] = True
-            lambda_chance = int(denominator*self.discount/(1-self.discount))
-            avg_chance[i, edge[1]] = lambda_chance
-            avg_chance[i, -2] = denominator-edges[edge]
-            avg_chance[i, -1] = edges[edge]
+            avg_chance[i, edge[1]] = int(denominator*self.discount)
+            avg_chance[i, -2] = int(denominator*(1-self.discount)*(1-(edges[edge]/(2*W))))
+            avg_chance[i, -1] = int(denominator*(1-self.discount)*(edges[edge]/(2*W)))
 
         return SimpleStochasticGame(vertices, owner, ssg_edges, avg_chance), W
 
@@ -352,7 +391,7 @@ class DiscountedMeanPayoffGame(Game):
 
         # print(strat)
 
-        return [v_n.solution_value() for v_n in v]
+        return np.array([v_n.solution_value() for v_n in v])
 
     def visualise(self, target_path=None):
 
@@ -485,7 +524,7 @@ class SimpleStochasticGame(Game):
 
         # print(strat)
 
-        return [v_n.solution_value() for v_n in v]
+        return np.array([v_n.solution_value() for v_n in v])
 
     def visualise(self, target_path=None):
 
@@ -530,43 +569,53 @@ def load(target_path):
 
 if __name__ == '__main__':
 
-    n = 2**5
+    n = 2**4
 
     # outdegree of every vertex has to be >=1
     # p is taken as if this wasn't the case
     # to adjust, every vertex is given at least one outgoing edge and p is rescaled afterwards
     # expected value of outdegree of vertices stays the same but the distribution changes
     # to allow for rescaling while keeping expected value of outdegrees, p has to be 1>=p>=1/#V
-    p = 2/16
+    p = 6/32
     p=((p*n)-1)/(n-1)
 
     w=10
 
-    # # # pg demo
+    # # pg demo
     # pg = ParityGame.generate(n, p)
+    # pg.visualise()
     # mpg = pg.to_mpg()
+    # mpg.visualise()
 
-    # # # mpg demo
+    # # mpg demo
     # mpg = MeanPayoffGame.generate(n, p, w)
-    # dpg = mpg.to_dpg()
-    # eg = mpg.to_eg()
+    # mpg.visualise()
+    # mpg_solve_v = mpg.solve_zwick_paterson()
+    # print(mpg_solve_v)
 
-    # # # eg demo
+
+    # # eg demo
     # eg = EnergyGame.generate(n, p, w)
+    # eg.visualise()
 
     # # dpg demo
-    dpg = DiscountedMeanPayoffGame.generate(n, p, w)
-    ssg, W = dpg.to_ssg()
-    strat_v = dpg.solve_strat_iter()
-    # value_v = dpg.solve_value_iter()
-    print([f"{v_n:.3f}" for v_n in strat_v])
-    # print([f"{v_n:.3f}" for v_n in value_v])
+    # dpg = DiscountedMeanPayoffGame.generate(n, p, w)
+    # dpg_strat_v = dpg.solve_strat_iter()
+    # print([f"{v_n:.3f}" for v_n in dpg_strat_v])
+    # print(timeit.timeit(lambda: dpg.solve_strat_iter(), number=1))
+    # dpg_value_v = dpg.solve_value_iter()
+    # print([f"{v_n:.3f}" for v_n in dpg_value_v])
+    # print(timeit.timeit(lambda: dpg.solve_value_iter(), number=1))
+    # ssg, W = dpg.to_ssg()
 
     # ssg demo
     # ssg = SimpleStochasticGame.generate(n, p)
-    strat_v = ssg.solve_strat_iter()
-    # value_v = ssg.solve_value_iter()
-    print([f"{(v_n*2*W)-W:.3f}" for v_n in strat_v[:dpg.vertices]])
-    # print([f"{v_n:.3f}" for v_n in strat_v])
-    # print([f"{v_n:.3f}" for v_n in value_v])
+    # ssg_strat_v = ssg.solve_strat_iter()
+    # print([f"{v_n:.3f}" for v_n in ssg_strat_v])
+    # ssg_strat_v_rescaled = (ssg_strat_v*2*W)-W
+    # print([f"{v_n:.3f}" for v_n in ssg_strat_v_rescaled[:dpg.vertices]])
+    # ssg_value_v = ssg.solve_value_iter()
+    # print([f"{v_n:.3f}" for v_n in ssg_value_v])
+    # ssg_value_v_rescaled = (ssg_value_v*2*W)-W
+    # print([f"{v_n:.3f}" for v_n in ssg_value_v_rescaled[:dpg.vertices]])
     # ssg.visualise()
