@@ -9,6 +9,7 @@ from datetime import datetime
 from itertools import *
 import math
 import timeit
+import functools
 
 class Game:
 
@@ -224,6 +225,146 @@ class EnergyGame(Game):
 
         return cls(vertices, owner, edges, credit)
 
+    def solve_bcdgr(self):
+
+        p0 = np.where(self.owner==False)[0]
+        p1 = np.where(self.owner==True)[0]
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        l = set()
+
+        # M_(G^gamma)
+        max_cycle_cost = 0
+        for v in self.edges:
+            max_cycle_cost += np.max((0,np.max(-(v[v!=mini]))))
+
+        def minus(a,b):
+            if (a!=-1 and ((aminb:=(a-b))<=max_cycle_cost)):
+                return max(0,aminb)
+            else:
+                return -1
+
+        def leq(x,y):
+            if (y==-1 or 0<=x<=y<=max_cycle_cost):
+                return True
+            else:
+                return False
+
+        for v in p0:
+            if np.all(self.edges[v]<0):
+                l.add(v)
+
+        for v in p1:
+            if np.any(np.logical_and(self.edges[v]<0,self.edges[v]!=mini)):
+                l.add(v)
+
+        f = np.zeros(self.vertices)
+
+        cnt = np.zeros(self.vertices)
+
+        for v in p0:
+            for w in np.where(self.edges[v]!=mini)[0]:
+                if leq(minus(f[w],self.edges[v,w]),f[v]):
+                    cnt[v]+=1
+
+        while l:
+            v=l.pop()
+            old=f[v]
+            if not self.owner[v]:
+                f[v]=min([minus_w for w in np.where(self.edges[v]!=mini)[0] if (minus_w:=minus(f[w],self.edges[v,w]))!=-1], default=-1)
+            else:
+                ma=0
+                cand=None
+                for w in np.where(self.edges[v]!=mini)[0]:
+                    minus_w=minus(f[w],self.edges[v,w])
+                    if minus_w==-1:
+                        ma=-1
+                        cand=w
+                        break
+                    elif minus_w>ma:
+                        cand=w
+                        ma=minus_w
+                f[v]=ma
+            if not self.owner[v]:
+                cnt[v]=0
+                for w in np.where(self.edges[v]!=mini)[0]:
+                    if leq(minus(f[w],self.edges[v,w]),f[v]):
+                        cnt[v]+=1
+
+            for u in [u for u in np.where(self.edges[:,v]!=mini)[0] if not leq(minus(f[v],self.edges[u,v]),f[u])]:
+                if not self.owner[u]:
+                    if leq(minus(old,self.edges[u,v]),f[u]):
+                        cnt[u]-=1
+                    if cnt[u]<=0:
+                        l.add(u)
+                else:
+                    l.add(u)
+
+        return f
+
+    def solve_value_iter(self):
+
+        p0 = np.where(self.owner==False)[0]
+        p1 = np.where(self.owner==True)[0]
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        l = set()
+
+        # M_(G^gamma)
+        max_cycle_cost = 0
+        for v in self.edges:
+            max_cycle_cost += np.max((0,np.max(-(v[v!=mini]))))
+
+        def minus(a,b):
+            if (a!=-1 and ((aminb:=(a-b))<=max_cycle_cost)):
+                return max(0,aminb)
+            else:
+                return -1
+
+        vminus = np.vectorize(minus)
+
+        def leq(x,y):
+            if (y==-1 or 0<=x<=y<=max_cycle_cost):
+                return True
+            else:
+                return False
+
+        vleq = np.vectorize(leq)
+
+        f = np.zeros(self.vertices).reshape((-1,1))
+
+        while True:
+
+            print(max_cycle_cost, f)
+
+            old = np.array(f)
+
+            # edges_weight = np.where(self.edges != mini, ((1-self.discount)*self.edges)+self.discount*cur, np.nan)
+            # cur = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
+
+            edges_weight = np.where(self.edges != mini, vminus(f,self.edges), np.nan)
+
+            f = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
+
+            # f[v]=min([minus_w for w in np.where(self.edges[v]!=mini)[0] if (minus_w:=minus(f[w],self.edges[v,w]))!=-1], default=-1)
+            # else:
+            #     ma=0
+            #     for w in np.where(self.edges[v]!=mini)[0]:
+            #         minus_w=minus(f[w],self.edges[v,w])
+            #         if minus_w==-1:
+            #             ma=-1
+            #             break
+            #         elif minus_w>ma:
+            #             ma=minus_w
+            #     f[v]=ma
+
+            if np.all(f==old):
+                break
+
+        return f
+
     def visualise(self, target_path=None):
 
         if target_path == None:
@@ -232,9 +373,9 @@ class EnergyGame(Game):
         view = Digraph(format="png")
         for i,owner in enumerate(self.owner):
             if not owner:
-                view.node(str(i), shape="square", fontcolor="#dfdfdf")
+                view.node(str(i), shape="square", fontcolor="#000000")
             else:
-                view.node(str(i), shape="circle", fontcolor="#dfdfdf")
+                view.node(str(i), shape="circle", fontcolor="#000000")
         mini = np.iinfo(self.edges.dtype).min
         idx = np.where(self.edges!=mini)
         for s,t in zip(idx[0],idx[1]):
@@ -569,14 +710,14 @@ def load(target_path):
 
 if __name__ == '__main__':
 
-    n = 2**4
+    n = int((2**.5)**8)
 
     # outdegree of every vertex has to be >=1
     # p is taken as if this wasn't the case
     # to adjust, every vertex is given at least one outgoing edge and p is rescaled afterwards
     # expected value of outdegree of vertices stays the same but the distribution changes
-    # to allow for rescaling while keeping expected value of outdegrees, p has to be 1>=p>=1/#V
-    p = 6/32
+    # to allow for rescaling while keeping expected value of outdegrees, p has to be 1/#V<=p<=1
+    p = 2/n
     p=((p*n)-1)/(n-1)
 
     w=10
@@ -587,7 +728,7 @@ if __name__ == '__main__':
     # mpg = pg.to_mpg()
     # mpg.visualise()
 
-    # # mpg demo
+    # mpg demo
     # mpg = MeanPayoffGame.generate(n, p, w)
     # mpg.visualise()
     # mpg_solve_v = mpg.solve_zwick_paterson()
@@ -595,17 +736,24 @@ if __name__ == '__main__':
 
 
     # # eg demo
-    # eg = EnergyGame.generate(n, p, w)
+    # eg = load(r"C:\ata\uni\master\grest\grest\graphs\EnergyGame_2021-08-24-08-54-53-852651.bin"))
+    eg = EnergyGame.generate(n, p, w)
     # eg.visualise()
+    # eg.save()
+    eg_solve_v = eg.solve_bcdgr()
+    eg_value_v = eg.solve_value_iter()
+
+    print("------")
+    print(eg_value_v)
+    print(eg_solve_v)
 
     # # dpg demo
     # dpg = DiscountedMeanPayoffGame.generate(n, p, w)
+    # dpg = mpg.to_dpg()
     # dpg_strat_v = dpg.solve_strat_iter()
     # print([f"{v_n:.3f}" for v_n in dpg_strat_v])
-    # print(timeit.timeit(lambda: dpg.solve_strat_iter(), number=1))
     # dpg_value_v = dpg.solve_value_iter()
     # print([f"{v_n:.3f}" for v_n in dpg_value_v])
-    # print(timeit.timeit(lambda: dpg.solve_value_iter(), number=1))
     # ssg, W = dpg.to_ssg()
 
     # ssg demo
