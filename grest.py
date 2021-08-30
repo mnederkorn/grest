@@ -259,7 +259,7 @@ class EnergyGame(Game):
             if np.any(np.logical_and(self.edges[v]<0,self.edges[v]!=mini)):
                 l.add(v)
 
-        f = np.zeros(self.vertices)
+        f = np.zeros(self.vertices, dtype=int)
 
         cnt = np.zeros(self.vertices)
 
@@ -305,12 +305,8 @@ class EnergyGame(Game):
 
     def solve_value_iter(self):
 
-        p0 = np.where(self.owner==False)[0]
-        p1 = np.where(self.owner==True)[0]
-
         mini = np.iinfo(self.edges.dtype).min
-
-        l = set()
+        maxi = np.iinfo(self.edges.dtype).max
 
         # M_(G^gamma)
         max_cycle_cost = 0
@@ -318,6 +314,8 @@ class EnergyGame(Game):
             max_cycle_cost += np.max((0,np.max(-(v[v!=mini]))))
 
         def minus(a,b):
+            if b==mini:
+                return 0
             if (a!=-1 and ((aminb:=(a-b))<=max_cycle_cost)):
                 return max(0,aminb)
             else:
@@ -325,40 +323,21 @@ class EnergyGame(Game):
 
         vminus = np.vectorize(minus)
 
-        def leq(x,y):
-            if (y==-1 or 0<=x<=y<=max_cycle_cost):
-                return True
-            else:
-                return False
-
-        vleq = np.vectorize(leq)
-
-        f = np.zeros(self.vertices).reshape((-1,1))
+        f = np.zeros(self.vertices,dtype=int).reshape((-1,1))
 
         while True:
 
-            print(max_cycle_cost, f)
-
             old = np.array(f)
 
-            # edges_weight = np.where(self.edges != mini, ((1-self.discount)*self.edges)+self.discount*cur, np.nan)
-            # cur = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
+            edges_weight = vminus(f, self.edges)
 
-            edges_weight = np.where(self.edges != mini, vminus(f,self.edges), np.nan)
+            edges_weight =  np.where(self.owner.reshape(-1,1), np.where(self.edges!=mini, edges_weight, mini), np.where(self.edges!=mini, edges_weight, maxi))
 
-            f = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
+            edges_weight = np.where(edges_weight==-1, maxi, edges_weight)
 
-            # f[v]=min([minus_w for w in np.where(self.edges[v]!=mini)[0] if (minus_w:=minus(f[w],self.edges[v,w]))!=-1], default=-1)
-            # else:
-            #     ma=0
-            #     for w in np.where(self.edges[v]!=mini)[0]:
-            #         minus_w=minus(f[w],self.edges[v,w])
-            #         if minus_w==-1:
-            #             ma=-1
-            #             break
-            #         elif minus_w>ma:
-            #             ma=minus_w
-            #     f[v]=ma
+            f = np.where(self.owner, np.max(edges_weight, 1), np.min(edges_weight, 1))
+
+            f = np.where(f==maxi, -1, f)
 
             if np.all(f==old):
                 break
@@ -710,7 +689,7 @@ def load(target_path):
 
 if __name__ == '__main__':
 
-    n = int((2**.5)**8)
+    n = int((2**.5)**12)
 
     # outdegree of every vertex has to be >=1
     # p is taken as if this wasn't the case
@@ -744,8 +723,9 @@ if __name__ == '__main__':
     eg_value_v = eg.solve_value_iter()
 
     print("------")
-    print(eg_value_v)
     print(eg_solve_v)
+    print(eg_value_v)
+    print(np.all(eg_solve_v==eg_value_v))
 
     # # dpg demo
     # dpg = DiscountedMeanPayoffGame.generate(n, p, w)
