@@ -10,6 +10,63 @@ from itertools import *
 import math
 import timeit
 import functools
+from copy import copy
+
+def printm(edges):
+
+    mini = np.iinfo(edges.dtype).min
+    maxi = np.iinfo(edges.dtype).max
+
+    print(np.where(edges==mini,"-",np.where(edges==maxi,"+",edges)))
+
+def find_negative_cycle_nodes(edges):
+
+    mini = np.iinfo(edges.dtype).min
+    maxi = np.iinfo(edges.dtype).max
+
+    edges_src = np.vstack((edges,np.zeros((1,edges.shape[1]), dtype=edges.dtype)))
+    edges_src = np.hstack((edges_src,np.full((edges_src.shape[0],1), mini, dtype=edges.dtype)))
+
+    dist = np.full(edges_src.shape[0], maxi)
+    dist[-1] = 0
+    pred = np.full(edges_src.shape[0], -1)
+
+    for i in range(1,edges_src.shape[0]+1):
+
+        src_is_pred = np.tile((dist!=maxi).reshape(-1,1),edges_src.shape[0])
+        shorter = (new_dist:=(dist.reshape(-1,1)+edges_src))<dist
+
+        maa=np.ma.masked_array(new_dist, ~(valids:=(edges_src!=mini)&src_is_pred))
+
+        exists_shorter = np.any(valids&shorter,axis=0)
+
+        if i!=(edges_src.shape[0]):
+            shorter_idx = np.argmin(maa, axis=0)
+
+            pred = np.where(exists_shorter, shorter_idx, pred)
+            dist = np.where(exists_shorter, new_dist[shorter_idx,np.arange(edges_src.shape[1])], dist)
+
+        else:
+
+            cycle_nodes_t = set()
+
+            for n in np.where(exists_shorter)[0]:
+
+                cycle_nodes = set()
+
+                s = [n]
+
+                for x in range(edges_src.shape[0]-1):
+                    if pred[n] == s[0]:
+                        cycle_nodes|=set(s)
+                        break
+                    else:
+                        s.append(pred[n])
+                        n=pred[n]
+
+                cycle_nodes_t|=cycle_nodes
+
+            return np.array(list(cycle_nodes_t))
 
 class Game:
 
@@ -344,6 +401,99 @@ class EnergyGame(Game):
 
         return f
 
+    def solve_strat_iter(self):
+
+        p0 = np.where(self.owner==False)[0]
+        p1 = np.where(self.owner==True)[0]
+
+        mini = np.iinfo(self.edges.dtype).min
+        maxi = np.iinfo(self.edges.dtype).max
+
+        # M_(G^gamma)
+        max_cycle_cost = 0
+        for v in self.edges:
+            max_cycle_cost += np.max((0,np.max(-(v[v!=mini]))))
+
+        nW = self.vertices*np.max(np.abs(self.edges[np.where(self.edges!=mini)]))
+
+        edges_p1 = self.edges[np.ix_(p1,p1)]
+
+        cycle_nodes = np.array([],dtype=edges_p1.dtype)
+
+        while True:
+            restriction = np.setdiff1d(np.arange(edges_p1.shape[0]),cycle_nodes)
+            ret = find_negative_cycle_nodes(edges_p1[np.ix_(restriction,restriction)])
+            if ret.shape==(0,):
+                break
+            else:
+                cycle_nodes=np.hstack((cycle_nodes,restriction[ret]))
+
+        if cycle_nodes.shape!=(0,):
+            for i in range(1,edges_p1.shape[0]-(cycle_nodes.shape[0]-1)):
+                old=cycle_nodes.shape
+                cycle_nodes=np.union1d(cycle_nodes,np.nonzero(np.any(edges_p1[:,cycle_nodes]!=mini, axis=1)))
+                if cycle_nodes.shape==old:
+                    break
+
+        # p1[cycle_nodes] 
+        # is the indices of the vertices in V_1 that can reach negative cycles in total control of player 1 (in self.edges indices reference)
+
+        owner = np.hstack((self.owner, False))
+        edges = np.vstack((self.edges,np.full((1,self.edges.shape[1]), mini, dtype=self.edges.dtype)))
+        edges = np.hstack((edges,np.full((edges.shape[0],1), mini, dtype=self.edges.dtype)))
+        edges[-1,-1]=0
+        edges[:-1,-1]=np.where(self.owner, edges[:-1,-1], -2*nW)
+
+        # V' & E'
+        restriction=np.setdiff1d(np.arange(edges.shape[0]),p1[cycle_nodes])
+        owner = owner[restriction]
+        edges = edges[np.ix_(restriction,restriction)]
+
+        # strat iteration for guessing for player 1/max player/"energy depleting player"
+
+        p1_ = np.where(owner==True)[0]
+
+        rnd_strat = np.apply_along_axis(lambda v: np.random.choice(np.where(v!=mini)[0]), 1, edges)
+
+        strat = rnd_strat
+
+        strat_hist = []
+
+        while not hash(strat.tobytes()) in strat_hist:
+
+            strat_hist.append(hash(strat.tobytes()))
+
+            f = np.zeros(owner.shape[0],dtype=np.int32)
+
+            oldest = np.array(f)  
+
+            while True:
+
+                old = np.array(f)                
+
+                edges_weight = np.where(edges!=mini,np.maximum(np.minimum(f-edges,3*nW),0),edges)
+
+                edges_weight = np.where(edges_weight==mini, maxi, edges_weight)
+
+                f = np.where(owner, edges_weight[np.arange(edges_weight.shape[0]),strat], np.min(edges_weight, 1))
+
+                edges_weight = np.where(edges_weight==maxi, mini, edges_weight)
+
+                if np.all(f==old):
+                    break
+
+            g = edges_weight[np.arange(edges.shape[0]),strat]<edges_weight[np.arange(edges.shape[0]),np.argmax(edges_weight,1)]
+
+            strat = np.where(owner&g, np.argmax(edges_weight,1), strat)
+
+        full = np.full(self.edges.shape[0], -1, dtype=np.int32)
+
+        f = np.where(f<nW, f, -1)[:-1]
+
+        full[np.setdiff1d(np.arange(self.edges.shape[0]), p1[cycle_nodes])]=f
+
+        return full
+
     def visualise(self, target_path=None):
 
         if target_path == None:
@@ -509,8 +659,6 @@ class DiscountedMeanPayoffGame(Game):
 
             strat = np.transpose(np.vstack((p0,strat)))
 
-        # print(strat)
-
         return np.array([v_n.solution_value() for v_n in v])
 
     def visualise(self, target_path=None):
@@ -642,8 +790,6 @@ class SimpleStochasticGame(Game):
 
             strat = np.transpose(np.vstack((p0,strat)))
 
-        # print(strat)
-
         return np.array([v_n.solution_value() for v_n in v])
 
     def visualise(self, target_path=None):
@@ -689,7 +835,7 @@ def load(target_path):
 
 if __name__ == '__main__':
 
-    n = int((2**.5)**12)
+    n = int((2**.5)**6)
 
     # outdegree of every vertex has to be >=1
     # p is taken as if this wasn't the case
@@ -717,15 +863,14 @@ if __name__ == '__main__':
     # # eg demo
     # eg = load(r"C:\ata\uni\master\grest\grest\graphs\EnergyGame_2021-08-24-08-54-53-852651.bin"))
     eg = EnergyGame.generate(n, p, w)
-    # eg.visualise()
-    # eg.save()
+    eg.visualise()
     eg_solve_v = eg.solve_bcdgr()
     eg_value_v = eg.solve_value_iter()
+    eg_strat_v = eg.solve_strat_iter()
 
-    print("------")
     print(eg_solve_v)
     print(eg_value_v)
-    print(np.all(eg_solve_v==eg_value_v))
+    print(eg_strat_v)
 
     # # dpg demo
     # dpg = DiscountedMeanPayoffGame.generate(n, p, w)
