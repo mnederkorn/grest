@@ -1,5 +1,7 @@
 from game import *
 import numpy as np
+from tempfile import gettempdir
+from graphviz import Digraph
 
 def find_negative_cycle_nodes(edges):
 
@@ -52,10 +54,9 @@ def find_negative_cycle_nodes(edges):
 
 class EnergyGame(Game):
 
-    def __init__(self, owner, edges, credit):
+    def __init__(self, owner, edges):
 
         super().__init__(owner, edges)
-        self.credit = credit
 
     @classmethod
     def generate(cls, n, p, w):
@@ -69,9 +70,8 @@ class EnergyGame(Game):
         edges_value = np.random.randint(-w, w+1, size=(n,n))
         mini = np.iinfo(edges_value.dtype).min
         edges = np.where(edges_exist, edges_value, mini)
-        credit = np.random.randint(-w*n,(w*n)+1, size=((1,)))
 
-        return cls(owner, edges, credit)
+        return cls(owner, edges)
 
     def solve_bcdgr(self):
 
@@ -400,21 +400,38 @@ class EnergyGame(Game):
                     s3 = v[np.where(v!=0)]
                     v = np.where(V, v-np.min([np.min(s1),np.min(s2),np.min(s3)]), v)
 
-    def visualise(self, target_path=None):
+    def visualise(self, target_path=None, strat=None):
 
         if target_path == None:
-            target_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "images", f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}")
+            target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}")
 
         view = Digraph(format="png")
+        view.attr(bgcolor="#f0f0f0")
         for i,owner in enumerate(self.owner):
             if not owner:
-                view.node(str(i), shape="square", fontcolor="#000000")
+                if strat[i]!=-1:
+                    view.node(str(i), shape="square", fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
+                else:
+                    view.node(str(i), shape="square", fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
             else:
-                view.node(str(i), shape="circle", fontcolor="#000000")
+                if strat[i]!=-1:
+                    view.node(str(i), shape="circle", fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
+                else:
+                    view.node(str(i), shape="circle", fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
         mini = np.iinfo(self.edges.dtype).min
         idx = np.where(self.edges!=mini)
         for s,t in zip(idx[0],idx[1]):
-            view.edge(str(s),str(t),str(self.edges[s,t]))
-        view.render(filename=target_path, view=False, cleanup=True)
+            if not self.owner[s]:
+                if strat[s]==t:
+                    view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
+                else:
+                    view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
+            else:
+                if strat[s]==t:
+                    view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
+                else:
+                    view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
 
-        return target_path+r".png"
+        save_loc = view.render(filename=target_path, view=False, cleanup=True)
+
+        return save_loc

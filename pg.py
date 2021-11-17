@@ -1,6 +1,8 @@
 from game import *
 import numpy as np
 from mpg import MeanPayoffGame
+from tempfile import gettempdir
+from graphviz import Digraph
 
 def find_attractor(player, owner, edges, Nh):
 
@@ -83,20 +85,37 @@ class ParityGame(Game):
 
         return MeanPayoffGame(self.owner, edges, np.array((0,)))
 
-    def visualise(self, target_path=None):
+    def visualise(self, target_path=None, strat=None):
 
         if target_path == None:
-            target_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "images", f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}")
+            target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}")
 
         view = Digraph(format="png")
+        view.attr(bgcolor="#f0f0f0")
         for i,(owner, priority) in enumerate(zip(self.owner, self.priority)):
             if not owner:
-                view.node(str(i), str(priority)+"_"+str(i), shape="diamond", fontcolor="#000000")
+                if strat[i]!=-1:
+                    view.node(str(i), str(priority)+"_"+str(i), shape="square", fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
+                else:
+                    view.node(str(i), str(priority)+"_"+str(i), shape="square", fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
             else:
-                view.node(str(i), str(priority)+"_"+str(i), shape="square", fontcolor="#000000")
+                if strat[i]!=-1:
+                    view.node(str(i), str(priority)+"_"+str(i), shape="circle", fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
+                else:
+                    view.node(str(i), str(priority)+"_"+str(i), shape="circle", fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
         idx = np.where(self.edges==True)
         for s,t in zip(idx[0],idx[1]):
-            view.edge(str(s),str(t))
-        view.render(filename=target_path, view=False, cleanup=True)
+            if not self.owner[s]:
+                if strat[s]==t:
+                    view.edge(str(s),str(t), fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
+                else:
+                    view.edge(str(s),str(t), fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
+            else:
+                if strat[s]==t:
+                    view.edge(str(s),str(t), fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
+                else:
+                    view.edge(str(s),str(t), fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
 
-        return target_path+r".png"
+        save_loc = view.render(filename=target_path, view=False, cleanup=True)
+
+        return save_loc

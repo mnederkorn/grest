@@ -1,6 +1,8 @@
 from game import *
 import numpy as np
 from ortools.linear_solver import pywraplp
+from tempfile import gettempdir
+from graphviz import Digraph
 
 class SimpleStochasticGame(Game):
 
@@ -107,34 +109,52 @@ class SimpleStochasticGame(Game):
 
         return np.array([v_n.solution_value() for v_n in v])
 
-    def visualise(self, target_path=None):
-
-        # colour="#dfdfdf"
-        colour="#000000"
+    def visualise(self, target_path=None, strat=None):
 
         if target_path == None:
-            target_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "images", f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}")
+            target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}")
 
         view = Digraph(format="png")
+        view.attr(bgcolor="#f0f0f0")
         for i,owner in enumerate(self.owner):
             if owner==0:
-                view.node(str(i), shape="square", fontcolor=colour)
+                if strat[i]!=-1:
+                    view.node(str(i), shape="square", fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
+                else:
+                    view.node(str(i), shape="square", fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
             elif owner==1:
-                view.node(str(i), shape="circle", fontcolor=colour)
-            elif owner==2:                
-                view.node(str(i), shape="diamond", fontcolor=colour)
-        view.node(str(len(self.owner)), label="MIN", shape="diamond", peripheries="2")
-        view.node(str(len(self.owner)+1), label="MAX", shape="diamond", peripheries="2")
+                if strat[i]!=-1:
+                    view.node(str(i), shape="circle", fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
+                else:
+                    view.node(str(i), shape="circle", fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
+            else:
+                view.node(str(i), shape="diamond", fontcolor=colour["blue"], color=colour["blue"])
 
-        for s in np.where(self.owner!=2)[0]:
-            for t in np.where(self.edges[s]==True)[0]:
-                view.edge(str(s),str(t))
+        view.node(str(len(self.owner)), label="MIN", shape="diamond", fontcolor=colour["blue"], color=colour["blue"], peripheries="2")
+        view.node(str(len(self.owner)+1), label="MAX", shape="diamond", fontcolor=colour["blue"], color=colour["blue"], peripheries="2")
+
+        idx = np.where(self.edges==True)
+        for s,t in zip(idx[0],idx[1]):
+            if self.owner[s]==0:
+                if strat[s]==t:
+                    view.edge(str(s),str(t), fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
+                else:
+                    view.edge(str(s),str(t), fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
+            elif self.owner[s]==1:
+                if strat[s]==t:
+                    view.edge(str(s),str(t), fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
+                else:
+                    view.edge(str(s),str(t), fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
+            # else:
+            #     view.edge(str(s),str(t), fontcolor=colour["blue"], color=colour["blue"])
 
         for i,s in enumerate(np.where(self.owner==2)[0]):
             total = np.sum(self.avg_chance[i])
             for t in np.where(self.edges[s]==True)[0]:
-                view.edge(str(s),str(t),f"{self.avg_chance[i,t]}/{total}")
+                print(self.avg_chance[i,t],total)
+                view.edge(str(s),str(t),f"{self.avg_chance[i,t]}/{total}",fontcolor=colour["blue"], color=colour["blue"])
 
-        view.render(filename=target_path, view=False, cleanup=True)
+        save_loc = view.render(filename=target_path, view=False, cleanup=True)
 
-        return target_path+r".png"
+        return save_loc
+

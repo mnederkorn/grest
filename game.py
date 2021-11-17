@@ -2,12 +2,7 @@ import os.path
 from datetime import datetime
 import pickle
 
-def printm(edges):
-
-    mini = np.iinfo(edges.dtype).min
-    maxi = np.iinfo(edges.dtype).max
-
-    print(np.where(edges==mini,"-",np.where(edges==maxi,"+",edges)))
+colour = {"green":{"dark":"#005f00","bright":"#00df00"},"red":{"dark":"#5f0000","bright":"#df0000"},"blue":"#00009f"}
 
 class Game:
 
@@ -35,3 +30,10 @@ class Game:
                     return game
                 except Exception as e:
                     print(e)
+
+    def printm(self):
+
+        mini = np.iinfo(self.edges.dtype).min
+        maxi = np.iinfo(self.edges.dtype).max
+
+        print(np.where(self.edges==mini,"-",np.where(self.edges==maxi,"+",self.edges)))

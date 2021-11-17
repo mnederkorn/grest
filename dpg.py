@@ -1,7 +1,9 @@
 from game import *
 import numpy as np
 from ortools.linear_solver import pywraplp
-from ssg import *
+from ssg import SimpleStochasticGame
+from graphviz import Digraph
+from tempfile import gettempdir
 
 class DiscountedPayoffGame(Game):
 
@@ -140,21 +142,38 @@ class DiscountedPayoffGame(Game):
 
         return np.array([v_n.solution_value() for v_n in v])
 
-    def visualise(self, target_path=None):
+    def visualise(self, target_path=None, strat=None):
 
         if target_path == None:
-            target_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "images", f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}")
+            target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}")
 
         view = Digraph(format="png")
+        view.attr(bgcolor="#f0f0f0")
         for i,owner in enumerate(self.owner):
             if not owner:
-                view.node(str(i), shape="square", fontcolor="#dfdfdf")
+                if strat[i]!=-1:
+                    view.node(str(i), shape="square", fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
+                else:
+                    view.node(str(i), shape="square", fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
             else:
-                view.node(str(i), shape="circle", fontcolor="#dfdfdf")
+                if strat[i]!=-1:
+                    view.node(str(i), shape="circle", fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
+                else:
+                    view.node(str(i), shape="circle", fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
         mini = np.iinfo(self.edges.dtype).min
         idx = np.where(self.edges!=mini)
         for s,t in zip(idx[0],idx[1]):
-            view.edge(str(s),str(t),str(self.edges[s,t]))
-        view.render(filename=target_path, view=False, cleanup=True)
+            if not self.owner[s]:
+                if strat[s]==t:
+                    view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
+                else:
+                    view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
+            else:
+                if strat[s]==t:
+                    view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
+                else:
+                    view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
+                    
+        save_loc = view.render(filename=target_path, view=False, cleanup=True)
 
-        return target_path+r".png"
+        return save_loc
