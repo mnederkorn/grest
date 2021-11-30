@@ -12,7 +12,7 @@ class SimpleStochasticGame(Game):
         self.avg_chance = avg_chance
 
     @classmethod
-    def generate(cls, n, p):
+    def generate(cls, n, p, _):
         owner = np.random.randint(0, 3, size=(n), dtype=np.uint8)
         edges = np.empty((n,n+2), dtype=bool)
         for e in edges:
@@ -109,50 +109,60 @@ class SimpleStochasticGame(Game):
 
         return np.array([v_n.solution_value() for v_n in v])
 
-    def visualise(self, target_path=None, strat=None):
+    def solve(self, strat=None):
+
+        if type(strat) != type(None):
+
+            old = np.array(self.edges)
+
+            self.edges = np.where(strat!=-1, 0, self.edges.transpose()).transpose()
+
+            for i in np.where(strat!=-1)[0]:
+                self.edges[i,strat[i]]=old[i,strat[i]]
+
+            ret = self.solve_value_iter()
+
+            self.edges = old
+
+        else:
+
+            ret = self.solve_value_iter()
+
+        return ret
+
+    def visualise(self, target_path=None, strat=None, values=None, restr_values=None):
+
+        if type(strat) == type(None):
+            strat = np.full(self.owner.shape[0],-1)
 
         if target_path == None:
-            target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}")
+            target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}")
 
         view = Digraph(format="png")
         view.attr(bgcolor="#f0f0f0")
         for i,owner in enumerate(self.owner):
-            if owner==0:
-                if strat[i]!=-1:
-                    view.node(str(i), shape="square", fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
-                else:
-                    view.node(str(i), shape="square", fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
-            elif owner==1:
-                if strat[i]!=-1:
-                    view.node(str(i), shape="circle", fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
-                else:
-                    view.node(str(i), shape="circle", fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
+            if (type(values) == type(None)) and (type(restr_values) == type(None)):
+                label = f"<v<sub>{i}</sub>>"
+            elif (type(values) != type(None)) and (type(restr_values) == type(None)):
+                label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}>"
+            elif (type(values) == type(None)) and (type(restr_values) != type(None)):
+                label = f"<v<sub>|</sub>(v<sub>{i}</sub>)={float(restr_values[i]):.2f}>"
             else:
-                view.node(str(i), shape="diamond", fontcolor=colour["blue"], color=colour["blue"])
+                label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}<br/>v<sub>|</sub>(v<sub>{i}</sub>)={float(restr_values[i]):.2f}>"
+            view.node(f"{i}", label=label, shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
 
-        view.node(str(len(self.owner)), label="MIN", shape="diamond", fontcolor=colour["blue"], color=colour["blue"], peripheries="2")
-        view.node(str(len(self.owner)+1), label="MAX", shape="diamond", fontcolor=colour["blue"], color=colour["blue"], peripheries="2")
+        view.node(str(len(self.owner)), label="0", shape=shape[2], fontcolor=colour[2][False], color=colour[2][False], peripheries="2")
+        view.node(str(len(self.owner)+1), label="1", shape=shape[2], fontcolor=colour[2][False], color=colour[2][False], peripheries="2")
 
         idx = np.where(self.edges==True)
         for s,t in zip(idx[0],idx[1]):
-            if self.owner[s]==0:
-                if strat[s]==t:
-                    view.edge(str(s),str(t), fontcolor=colour["green"]["bright"], color=colour["green"]["bright"])
-                else:
-                    view.edge(str(s),str(t), fontcolor=colour["green"]["dark"], color=colour["green"]["dark"])
-            elif self.owner[s]==1:
-                if strat[s]==t:
-                    view.edge(str(s),str(t), fontcolor=colour["red"]["bright"], color=colour["red"]["bright"])
-                else:
-                    view.edge(str(s),str(t), fontcolor=colour["red"]["dark"], color=colour["red"]["dark"])
-            # else:
-            #     view.edge(str(s),str(t), fontcolor=colour["blue"], color=colour["blue"])
+            if self.owner[s]!=2:
+                view.edge(str(s),str(t), fontcolor=colour[self.owner[s]][strat[s]==t], color=colour[self.owner[s]][strat[s]==t])
 
         for i,s in enumerate(np.where(self.owner==2)[0]):
             total = np.sum(self.avg_chance[i])
             for t in np.where(self.edges[s]==True)[0]:
-                print(self.avg_chance[i,t],total)
-                view.edge(str(s),str(t),f"{self.avg_chance[i,t]}/{total}",fontcolor=colour["blue"], color=colour["blue"])
+                view.edge(str(s),str(t),f"{self.avg_chance[i,t]}/{total}",fontcolor=colour[2][False], color=colour[2][False])
 
         save_loc = view.render(filename=target_path, view=False, cleanup=True)
 

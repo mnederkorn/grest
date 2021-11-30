@@ -4,6 +4,7 @@ from mpg import *
 from dpg import *
 from eg import *
 from ssg import *
+import time
 
 if __name__ == '__main__':
 
@@ -20,32 +21,36 @@ if __name__ == '__main__':
     w=10
     h=5
 
-    # pg demo
-    pg = ParityGame.generate(n, p, 4)
-    pg.solve_zielonka()
-    pg.to_mpg()
+    # # pg demo
+    # pg = ParityGame.generate(n, p, 3)
+    # print(pg.solve_zielonka())
 
     # mpg demo
-    mpg = MeanPayoffGame.generate(n, p, w)
-    mpg.solve_zwick_paterson()
-    mpg.to_dpg()
-    mpg.to_eg()
+    # mpg = MeanPayoffGame.generate(n, p, w)
+    # mpg.visualise()
+    # print(mpg.solve_zwick_paterson())
+    # mpg.to_dpg()
+    # mpg.to_eg()
 
-    # eg demo
+    # # eg demo
     eg = EnergyGame.generate(n, p, w)
-    eg.solve_strat_iter_below()
-    # eg.solve_strat_iter_above()
+    # eg_strat_above eg.solve_strat_iter_above()
+    eg_strat_below = eg.solve_strat_iter_below()
     eg_solve_v = eg.solve_bcdgr()
     eg_value_v = eg.solve_value_iter()
+    # print(eg_strat_above)
+    print(eg_strat_below)
+    print(eg_solve_v)
+    print(eg_value_v)
 
-    # dpg demo
-    dpg = DiscountedPayoffGame.generate(n, p, w)
-    dpg_strat_v = dpg.solve_strat_iter()
-    dpg_value_v = dpg.solve_value_iter()
-    dpg.to_ssg()
+    # # dpg demo
+    # dpg = DiscountedPayoffGame.generate(n, p, w)
+    # dpg_strat_v = dpg.solve_strat_iter()
+    # dpg_value_v = dpg.solve_value_iter()
+    # dpg.to_ssg()
 
-    # ssg demo
-    ssg = SimpleStochasticGame.generate(n, p)
-    ssg.solve_strat_iter()
-    ssg.solve_value_iter()
-    ssg.save()
+    # # ssg demo
+    # ssg = SimpleStochasticGame.generate(n, p)
+    # ssg.solve_strat_iter()
+    # ssg.solve_value_iter()
+    # ssg.save()

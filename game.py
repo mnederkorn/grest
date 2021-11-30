@@ -1,8 +1,14 @@
 import os.path
 from datetime import datetime
 import pickle
+import numpy as np
 
-colour = {"green":{"dark":"#005f00","bright":"#00df00"},"red":{"dark":"#5f0000","bright":"#df0000"},"blue":"#00009f"}
+dark = "3f"
+middle = "78"
+bright = "cf"
+
+colour = {0:{False:f"#00{dark}00",True:f"#00{bright}00"},1:{False:f"#{dark}0000",True:f"#{bright}0000"},2:{False:f"#0000{middle}",True:f"#0000{middle}"}}
+shape = {0:"square", 1:"circle", 2:"diamond"}
 
 class Game:
 
@@ -14,7 +20,7 @@ class Game:
     def save(self, target_path=None):
 
         if target_path == None:
-            target_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "graphs", f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S-%f')}.bin")
+            target_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "graphs", f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.bin")
 
         with open(target_path, "wb") as file:
             pickle.dump(self, file)
@@ -31,9 +37,10 @@ class Game:
                 except Exception as e:
                     print(e)
 
-    def printm(self):
+    @staticmethod
+    def printm(edges):
 
-        mini = np.iinfo(self.edges.dtype).min
-        maxi = np.iinfo(self.edges.dtype).max
+        mini = np.iinfo(edges.dtype).min
+        maxi = np.iinfo(edges.dtype).max
 
-        print(np.where(self.edges==mini,"-",np.where(self.edges==maxi,"+",self.edges)))
+        print(np.where(edges==mini,"-",np.where(edges==maxi,"+",edges)))

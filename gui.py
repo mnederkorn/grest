@@ -6,6 +6,7 @@ from PIL import Image, ImageTk
 from math import ceil, log10
 
 from grest import *
+from game import Game
 from pg import ParityGame
 from mpg import MeanPayoffGame
 from dpg import DiscountedPayoffGame
@@ -20,33 +21,51 @@ class Gui:
 
         self.top = Tk()
 
+        self.top.title("")
+
         self.menubar = Menu(self.top)
         self.filemenu = Menu(self.menubar, tearoff=0)
         self.gen_menu = Menu(self.filemenu, tearoff=0)
-        self.gen_menu.add_command(label="PG", command=lambda: self.gen_prompt("PG"), accelerator="Ctrl-1")
-        self.gen_menu.add_command(label="MPG", command=lambda: self.gen_prompt("MPG"), accelerator="Ctrl-2")
-        self.gen_menu.add_command(label="DPG", command=lambda: self.gen_prompt("DPG"), accelerator="Ctrl-3")
-        self.gen_menu.add_command(label="EG", command=lambda: self.gen_prompt("EG"), accelerator="Ctrl-4")
-        self.gen_menu.add_command(label="SSG", command=lambda: self.gen_prompt("SSG"), accelerator="Ctrl-5")
+        self.gen_menu.add_command(label="PG", command=lambda: self.gen_prompt(ParityGame), accelerator="Ctrl-1")
+        self.gen_menu.add_command(label="MPG", command=lambda: self.gen_prompt(MeanPayoffGame), accelerator="Ctrl-2")
+        self.gen_menu.add_command(label="DPG", command=lambda: self.gen_prompt(DiscountedPayoffGame), accelerator="Ctrl-3")
+        self.gen_menu.add_command(label="EG", command=lambda: self.gen_prompt(SimpleStochasticGame), accelerator="Ctrl-4")
+        self.gen_menu.add_command(label="SSG", command=lambda: self.gen_prompt(EnergyGame), accelerator="Ctrl-5")
         self.filemenu.add_cascade(label="Generate", menu=self.gen_menu)
-        self.filemenu.add_command(label="Open", accelerator="Ctrl-O")
-        self.filemenu.add_command(label="Save", accelerator="Ctrl-S")
+        self.filemenu.add_command(label="Open", accelerator="Ctrl-O", command=self.open_file)
+        self.filemenu.add_command(label="Save", accelerator="Ctrl-S", command=self.save_file_as)
         self.menubar.add_cascade(label="File", menu=self.filemenu)
         self.top.config(menu=self.menubar)
 
         self.frame_left = Frame(self.top)
 
+        self.frame_top_left = Frame(self.frame_left)
+        self.frame_bottom_left = Frame(self.frame_left)
+
         self.scale = 1.0
 
-        self.scroll_canvas = Canvas(master=self.frame_left)
+        self.cur_mode = BooleanVar()
+        self.cur_mode.set(False)
+        self.cur_cb = Checkbutton(master=self.frame_top_left, command=self._render, text="Show restr. opt. value", variable=self.cur_mode, state="disabled")
+        self.glob_mode = BooleanVar()
+        self.glob_mode.set(False)
+        self.glob_cb = Checkbutton(master=self.frame_top_left, command=self._render, text="Show opt. value", variable=self.glob_mode, state="disabled")
+
+        self.cur_cb.pack(side=TOP, fill=X, expand=False)
+        self.glob_cb.pack(side=LEFT, fill=X, expand=False)
+
+        self.scroll_canvas = Canvas(master=self.frame_bottom_left)
         self.frame = Frame(master=self.scroll_canvas)
-        self.scrollbar = Scrollbar(master=self.frame_left, command=self.scroll_canvas.yview, orient=VERTICAL)
+        self.scrollbar = Scrollbar(master=self.frame_bottom_left, command=self.scroll_canvas.yview, orient=VERTICAL)
         self.scroll_canvas.config(yscrollcommand=self.scrollbar.set)
 
         self.scroll_canvas.create_window((0,0), window=self.frame, anchor="nw")
 
         self.scroll_canvas.pack(side=LEFT, fill=Y, expand=False)
         self.scrollbar.pack(side=RIGHT, fill=Y, expand=False)
+
+        self.frame_top_left.pack(side=TOP, fill=X, expand=False)
+        self.frame_bottom_left.pack(side=BOTTOM, fill=BOTH, expand=True)
 
         self.frame_left.pack(side=LEFT, fill=Y, expand=False)
 
@@ -57,42 +76,69 @@ class Gui:
         self.canvas.bind("<ButtonPress-1>", self.scroll_start)
         self.canvas.bind("<B1-Motion>", self.scroll_move)
         self.canvas.bind("<MouseWheel>",self.zoom)
-        self.top.bind_all("<Control-Key-1>", lambda _: self.gen_prompt("PG"))
-        self.top.bind_all("<Control-Key-2>", lambda _: self.gen_prompt("MPG"))
-        self.top.bind_all("<Control-Key-3>", lambda _: self.gen_prompt("DPG"))
-        self.top.bind_all("<Control-Key-4>", lambda _: self.gen_prompt("EG"))
-        self.top.bind_all("<Control-Key-5>", lambda _: self.gen_prompt("SSG"))
+        self.top.bind_all("<Key-1>", lambda _: [self.cur_cb.toggle(), self._render()])
+        self.top.bind_all("<Key-2>", lambda _: [self.glob_cb.toggle(), self._render()])
+        self.top.bind_all("<Control-Key-1>", lambda _: self.gen_prompt(ParityGame))
+        self.top.bind_all("<Control-Key-2>", lambda _: self.gen_prompt(MeanPayoffGame))
+        self.top.bind_all("<Control-Key-3>", lambda _: self.gen_prompt(DiscountedPayoffGame))
+        self.top.bind_all("<Control-Key-4>", lambda _: self.gen_prompt(SimpleStochasticGame))
+        self.top.bind_all("<Control-Key-5>", lambda _: self.gen_prompt(EnergyGame))
+        self.top.bind_all("<Control-Key-s>", self.save_file_as)
+        self.top.bind_all("<Control-Key-o>", self.open_file)
 
         self.render()
 
         self.top.mainloop()
 
-    def _render(self):
+    def get_strat(self):        
+
+        strat = np.full(len(self.game.owner),-1)
+
+        for i,src in enumerate(self.sources_0):
+            tgt = self.tgt_sb_0[i].get()
+            if tgt!="":
+                strat[src]=int(tgt)
+
+        for i,src in enumerate(self.sources_1):
+            tgt = self.tgt_sb_1[i].get()
+            if tgt!="":
+                strat[src]=int(tgt)
+
+        if self.game.__class__ in [MeanPayoffGame, DiscountedPayoffGame, EnergyGame]:
+
+            mini = np.iinfo(self.game.edges.dtype).min
+
+            for i,(k,l) in enumerate(zip(np.count_nonzero(self.game.edges!=mini,1)==1,np.argmax(self.game.edges,1))):
+                if k:
+                    strat[i]=l
+
+        elif self.game.__class__ in [ParityGame, SimpleStochasticGame]:
+
+            for i,(k,l) in enumerate(zip(np.count_nonzero(self.game.edges,1)==1,np.argmax(self.game.edges,1))):
+                if k:
+                    strat[i]=l
+
+        return strat
+
+    def _render(self, restr_values=None):
 
         if hasattr(self, "game"):
 
-            strat = np.full(len(self.game.owner),-1)
+            strat = self.get_strat()
 
-            for i,src in enumerate(self.sources):
-                tgt = self.tgt_sb[i].get()
-                if tgt!="":
-                    strat[src]=int(tgt)
+            if self.glob_mode.get():
+                if not hasattr(self, "values"):
+                    self.values = self.game.solve()
+                values=self.values
+            else:
+                values=None
 
-            if self.typ=="MPG" or self.typ=="DPG" or self.typ=="EG":
+            if self.cur_mode.get():
+                restr_values = self.game.solve(strat=strat)
+            else:
+                restr_values = None
 
-                mini = np.iinfo(self.game.edges.dtype).min
-
-                for i,(k,l) in enumerate(zip(np.count_nonzero(self.game.edges!=mini,1)==1,np.argmax(self.game.edges,1))):
-                    if k:
-                        strat[i]=l
-
-            elif self.typ=="PG" or self.typ=="SSG":
-
-                for i,(k,l) in enumerate(zip(np.count_nonzero(self.game.edges,1)==1,np.argmax(self.game.edges,1))):
-                    if k:
-                        strat[i]=l
-
-            im = self.game.visualise(strat=strat)
+            im = self.game.visualise(strat=strat, values=values, restr_values=restr_values)
 
             self.img = Image.open(im)
             self.img.load()
@@ -109,26 +155,61 @@ class Gui:
 
         if hasattr(self, "game"):
 
-            if self.typ=="MPG" or self.typ=="DPG" or self.typ=="EG":
+            for w in self.frame.winfo_children():
+                w.destroy()
+
+            if self.game.__class__ in [MeanPayoffGame, DiscountedPayoffGame, EnergyGame]:
 
                 mini = np.iinfo(self.game.edges.dtype).min
 
-                # source is of desired player and not trivial (only one successor)
-                self.sources = np.where((self.game.owner==False) & (np.count_nonzero(self.game.edges!=mini,1)>1))[0]
+                # source of desired player and successor not trivial
+                self.sources_0 = np.where((self.game.owner==0) & (np.count_nonzero(self.game.edges!=mini,1)>1))[0]
+                self.sources_1 = np.where((self.game.owner==1) & (np.count_nonzero(self.game.edges!=mini,1)>1))[0]
 
-                src_lab = [Label(self.frame, text=f"{src} ↦") for src in self.sources]
-                self.tgt_sb = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt!=mini), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources]
+                src_lab_0 = [Label(self.frame, text=f"{src} ↦") for src in self.sources_0]
+                src_lab_1 = [Label(self.frame, text=f"{src} ↦") for src in self.sources_1]
+                self.tgt_sb_0 = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt!=mini), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_0]
+                self.tgt_sb_1 = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt!=mini), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_1]
 
-            elif self.typ=="PG" or self.typ=="SSG":
+            elif self.game.__class__ in [ParityGame, SimpleStochasticGame]:
 
-                self.sources = np.where((self.game.owner==0) & (np.count_nonzero(self.game.edges,1)>1))[0]
+                self.sources_0 = np.where((self.game.owner==0) & (np.count_nonzero(self.game.edges,1)>1))[0]
+                self.sources_1 = np.where((self.game.owner==1) & (np.count_nonzero(self.game.edges,1)>1))[0]
 
-                src_lab = [Label(self.frame, text=f"{src} ↦") for src in self.sources]
-                self.tgt_sb = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources]
+                src_lab_0 = [Label(self.frame, text=f"{src} ↦") for src in self.sources_0]
+                src_lab_1 = [Label(self.frame, text=f"{src} ↦") for src in self.sources_1]
+                self.tgt_sb_0 = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_0]
+                self.tgt_sb_1 = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_1]
 
-            for i,(src,tgt) in enumerate(zip(src_lab,self.tgt_sb)):
-                src.grid(row=i,column=0, sticky="nswe")
-                tgt.grid(row=i,column=1, sticky="nswe")
+            if self.game.__class__ in [MeanPayoffGame, DiscountedPayoffGame, EnergyGame, SimpleStochasticGame]:
+                lab_0 = Label(self.frame, text="Max player strategy")
+            else:
+                lab_0 = Label(self.frame, text="Even player strategy")
+            lab_0.grid(row=0, column=0, columnspan=2, sticky="nw")
+
+            i=1
+
+            for j,(src,tgt) in enumerate(zip(src_lab_0,self.tgt_sb_0)):
+                src.grid(row=(i+j),column=0, sticky="nw")
+                tgt.grid(row=(i+j),column=1, sticky="nw")
+            
+            i+=len(self.sources_0)
+
+            if self.game.__class__ in [MeanPayoffGame, DiscountedPayoffGame, EnergyGame, SimpleStochasticGame]:
+                lab_1 = Label(self.frame, text="Min player strategy")
+            else:
+                lab_1 = Label(self.frame, text="Odd player strategy")
+            lab_1.grid(row=i, column=0, columnspan=2, sticky="nw")
+
+            i+=1
+
+            for j,(src,tgt) in enumerate(zip(src_lab_1,self.tgt_sb_1)):
+                src.grid(row=(i+j),column=0, sticky="nw")
+                tgt.grid(row=(i+j),column=1, sticky="nw")
+
+            self.cur_cb.config(state="normal")
+            self.glob_cb.config(state="normal")
+
 
         self.frame.bind("<Configure>", lambda x: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
         self.scroll_canvas.update()
@@ -138,20 +219,14 @@ class Gui:
 
     def generate(self, typ, *arg):
 
-        self.typ=typ
-
         p=arg[1]/arg[0]
 
-        if typ=="PG":
-            self.game = ParityGame.generate(arg[0], p, arg[2])
-        elif typ=="MPG":
-            self.game = MeanPayoffGame.generate(arg[0], p, arg[2])
-        elif typ=="DPG":
-            self.game = DiscountedPayoffGame.generate(arg[0], p, arg[2])
-        elif typ=="EG":
-            self.game = EnergyGame.generate(arg[0], p, arg[2])
-        elif typ=="SSG":
-            self.game = SimpleStochasticGame.generate(arg[0], p)
+        if hasattr(self, "values"):
+            del self.values
+        self.glob_mode.set(False)
+        self.cur_mode.set(False)
+
+        self.game = typ.generate(arg[0], p, arg[2])
 
         self.render()
 
@@ -159,7 +234,7 @@ class Gui:
 
         top = Toplevel()
         top.resizable(False, False)
-        top.title(f"Generate {typ}")
+        top.title(f"Generate {typ.__name__}")
         nodes_lab = Label(top, text="Nodes #")
         nodes_n = Spinbox(top, from_=1, to=100)
         nodes_n.delete(0, 1)
@@ -168,8 +243,8 @@ class Gui:
         avg_out = Spinbox(top, from_=1, to=10, increment=0.05)
         avg_out.delete(0, 4)
         avg_out.insert(0, 2)
-        if typ!="SSG":
-            if typ=="PG":
+        if typ!=SimpleStochasticGame:
+            if typ==ParityGame:
                 maxi_lab = Label(top, text="Max. Priority", anchor="w")
             else:
                 maxi_lab = Label(top, text="Max. Edge Weight", anchor="w")
@@ -179,19 +254,38 @@ class Gui:
             button = Button(top, text="Generate", command=lambda: [self.generate(typ, int(nodes_n.get()), float(avg_out.get()), int(maxi.get())), top.destroy()])
             button.bind("<Return>", lambda _: [self.generate(typ, int(nodes_n.get()), float(avg_out.get()), int(maxi.get())), top.destroy()])
         else:
-            button = Button(top, text="Generate", command=lambda: [self.generate(typ, int(nodes_n.get()), float(avg_out.get())), top.destroy()])
-            button.bind("<Return>", lambda _: [self.generate(typ, int(nodes_n.get()), float(avg_out.get())), top.destroy()])
+            button = Button(top, text="Generate", command=lambda: [self.generate(typ, int(nodes_n.get()), float(avg_out.get()), None), top.destroy()])
+            button.bind("<Return>", lambda _: [self.generate(typ, int(nodes_n.get()), float(avg_out.get()), None), top.destroy()])
 
         nodes_lab.grid(row=1,column=1,sticky="w")
         out_lab.grid(row=2,column=1,sticky="w")
         nodes_n.grid(row=1,column=2)
         avg_out.grid(row=2,column=2)
-        if typ!="SSG":
+        if typ!=SimpleStochasticGame:
             maxi_lab.grid(row=3,column=1,sticky="w")       
             maxi.grid(row=3,column=2)            
         button.grid(row=4,column=1,columnspan=2,sticky="we")
 
         button.focus()
+
+    def open_file(self, *_):
+
+        file = filedialog.askopenfilename(parent=self.top, initialdir=os.path.join(os.path.dirname(os.path.realpath(__file__)),"graphs"), filetypes=[("binary", ".bin")])
+
+        if file:
+            if hasattr(self, "values"):
+                del self.values
+            self.glob_mode.set(False)
+            self.cur_mode.set(False)
+            self.game = Game.load(file)
+            self.render()
+
+    def save_file_as(self, *_):
+
+        if hasattr(self, "game"):
+            file = filedialog.asksaveasfilename(parent=self.top, initialdir=os.path.join(os.path.dirname(os.path.realpath(__file__)),"graphs"), initialfile=f"{self.game.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.bin", filetypes=[("binary", ".bin")], defaultextension=".bin")
+            if file:
+                self.game.save(file)
 
     def scroll_start(self, event):
         self.canvas.scan_mark(event.x, event.y)
