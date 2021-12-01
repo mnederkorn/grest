@@ -12,7 +12,7 @@ class SimpleStochasticGame(Game):
         self.avg_chance = avg_chance
 
     @classmethod
-    def generate(cls, n, p, _):
+    def generate(cls, n, p):
         owner = np.random.randint(0, 3, size=(n), dtype=np.uint8)
         edges = np.empty((n,n+2), dtype=bool)
         for e in edges:
@@ -22,8 +22,10 @@ class SimpleStochasticGame(Game):
             e[rng+1:] = np.random.choice([False, True], size=(n+2)-(rng+1), p=[1-p, p])
 
         avg_n = np.count_nonzero(owner==2)
-        avg_chance = np.random.randint(0, 256, size=(avg_n,n+2), dtype=np.uint32)
+        avg_chance = np.random.random(size=(avg_n,n+2))
         avg_chance = np.where(edges[np.where(owner==2)], avg_chance, 0)
+
+        avg_chance = (avg_chance.transpose()/np.sum(avg_chance,1)).transpose()
 
         return cls(owner, edges, avg_chance)
 
@@ -42,7 +44,7 @@ class SimpleStochasticGame(Game):
             cur[:-2] = np.where(self.owner == 1, np.nanmin(edges_weight, 1), cur[:-2])
 
             idx = np.where(self.owner == 2)
-            cur[idx]=np.sum(self.avg_chance*old, 1)/np.sum(self.avg_chance, 1)
+            cur[idx]=np.sum(self.avg_chance*old, 1)
 
             max_err = np.amax(cur-old)
 
@@ -58,7 +60,10 @@ class SimpleStochasticGame(Game):
         p1 = np.where(self.owner==1)[0]
         p2 = np.where(self.owner==2)[0]
 
-        rnd_strat = np.apply_along_axis(lambda x: np.random.choice(np.where(x)[0]), 1, self.edges[p0])
+        if len(p0) != 0:
+            rnd_strat = np.apply_along_axis(lambda x: np.random.choice(np.where(x)[0]), 1, self.edges[p0])
+        else:
+            rnd_strat = np.array([])
 
         rnd_strat = np.vstack((p0,rnd_strat))
 
@@ -84,9 +89,7 @@ class SimpleStochasticGame(Game):
                     solver.Add(v[s] <= v[t])
 
             for i,s in enumerate(p2):
-                where = np.where(self.edges[s])[0]
-                su = np.sum(self.avg_chance[i,where])
-                val = sum([v[val_n]*(self.avg_chance[i,val_n]/su) for val_n in where])
+                val = sum([v[val_n]*self.avg_chance[i,val_n] for val_n in np.where(self.edges[s])[0]])
                 solver.Add(v[s] == val)
 
             obj_func = v[0]
@@ -160,9 +163,8 @@ class SimpleStochasticGame(Game):
                 view.edge(str(s),str(t), fontcolor=colour[self.owner[s]][strat[s]==t], color=colour[self.owner[s]][strat[s]==t])
 
         for i,s in enumerate(np.where(self.owner==2)[0]):
-            total = np.sum(self.avg_chance[i])
             for t in np.where(self.edges[s]==True)[0]:
-                view.edge(str(s),str(t),f"{self.avg_chance[i,t]}/{total}",fontcolor=colour[2][False], color=colour[2][False])
+                view.edge(str(s),str(t),f"{self.avg_chance[i,t]:.2f}",fontcolor=colour[2][False], color=colour[2][False])
 
         save_loc = view.render(filename=target_path, view=False, cleanup=True)
 

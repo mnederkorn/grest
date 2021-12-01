@@ -1,7 +1,6 @@
 from game import *
 import numpy as np
 from math import floor,ceil
-from fractions import Fraction
 from dpg import DiscountedPayoffGame
 from eg import EnergyGame
 from graphviz import Digraph
@@ -61,7 +60,7 @@ class MeanPayoffGame(Game):
                 f=floor(lower[v_n]*denominator)
                 c=ceil(upper[v_n]*denominator)
                 for numerator in range(f,c+1):
-                    r=Fraction(numerator,denominator)
+                    r=numerator/denominator
                     if ((lower[v_n]<=r)&(r<=upper[v_n])):
                         v[v_n]=r
                         br = True

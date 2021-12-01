@@ -46,24 +46,22 @@ class DiscountedPayoffGame(Game):
 
         f3pos = np.where(self.edges != mini)
 
-        denominator = np.iinfo(np.uint32).max
-
         ssg_edges = np.full((vertices,vertices+2), False)
 
         owner = np.hstack((self.owner, np.full(f3, 2, dtype=np.uint8)))
 
-        avg_chance = np.zeros((f3, vertices+2), dtype=np.uint32)
+        avg_chance = np.zeros((f3, vertices+2))
 
         for i,edge in enumerate(zip(f3pos[0],f3pos[1])):
             ssg_edges[edge[0], i+len(self.owner)] = True
             ssg_edges[i+len(self.owner), edge[1]] = True
             ssg_edges[i+len(self.owner), -1] = True
             ssg_edges[i+len(self.owner), -2] = True
-            avg_chance[i, edge[1]] = int(denominator*self.discount)
-            avg_chance[i, -2] = int(denominator*(1-self.discount)*(1-(edges[edge]/(2*W))))
-            avg_chance[i, -1] = int(denominator*(1-self.discount)*(edges[edge]/(2*W)))
-
-        return SimpleStochasticGame(owner, ssg_edges, avg_chance), W
+            avg_chance[i, edge[1]] = self.discount
+            avg_chance[i, -2] = (1-self.discount)*(1-(edges[edge]/(2*W)))
+            avg_chance[i, -1] = (1-self.discount)*(edges[edge]/(2*W))
+            
+        return SimpleStochasticGame(owner, ssg_edges, avg_chance)
 
     def solve_value_iter(self):
 

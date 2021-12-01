@@ -76,8 +76,8 @@ class Gui:
         self.canvas.bind("<ButtonPress-1>", self.scroll_start)
         self.canvas.bind("<B1-Motion>", self.scroll_move)
         self.canvas.bind("<MouseWheel>",self.zoom)
-        self.top.bind_all("<Key-1>", lambda _: [self.cur_cb.toggle(), self._render()])
-        self.top.bind_all("<Key-2>", lambda _: [self.glob_cb.toggle(), self._render()])
+        self.top.bind_all("<Key-1>", lambda _: [self.cur_cb.toggle() if self.cur_cb['state']=="normal" else None, self._render()])
+        self.top.bind_all("<Key-2>", lambda _: [self.glob_cb.toggle() if self.glob_cb['state']=="normal" else None, self._render()])
         self.top.bind_all("<Control-Key-1>", lambda _: self.gen_prompt(ParityGame))
         self.top.bind_all("<Control-Key-2>", lambda _: self.gen_prompt(MeanPayoffGame))
         self.top.bind_all("<Control-Key-3>", lambda _: self.gen_prompt(DiscountedPayoffGame))
@@ -141,7 +141,11 @@ class Gui:
             im = self.game.visualise(strat=strat, values=values, restr_values=restr_values)
 
             self.img = Image.open(im)
+
             self.img.load()
+
+            os.remove(im)
+            
             self.img=self.img.resize((int(self.img.size[0]*self.scale),int(self.img.size[1]*self.scale)),Image.ANTIALIAS)
             self.pi = ImageTk.PhotoImage(self.img)
 
@@ -219,14 +223,23 @@ class Gui:
 
     def generate(self, typ, *arg):
 
+        if not 1<arg[1]<=arg[0]:
+            messagebox.showwarning("", "Nodes # has to be at least 1\nAvg. outgoing Edges per Node has to be at least 1\nNodes # has to be greater or equal to Avg. outgoing Edges per Node")
+            return
+
         p=arg[1]/arg[0]
+
+        p=min(max(0,((p*arg[0])-1)/(arg[0]-1)),1)
 
         if hasattr(self, "values"):
             del self.values
         self.glob_mode.set(False)
         self.cur_mode.set(False)
 
-        self.game = typ.generate(arg[0], p, arg[2])
+        if typ in [MeanPayoffGame, DiscountedPayoffGame, EnergyGame, ParityGame]:
+            self.game = typ.generate(arg[0], p, arg[2])
+        else:
+            self.game = typ.generate(arg[0], p)
 
         self.render()
 
@@ -254,8 +267,8 @@ class Gui:
             button = Button(top, text="Generate", command=lambda: [self.generate(typ, int(nodes_n.get()), float(avg_out.get()), int(maxi.get())), top.destroy()])
             button.bind("<Return>", lambda _: [self.generate(typ, int(nodes_n.get()), float(avg_out.get()), int(maxi.get())), top.destroy()])
         else:
-            button = Button(top, text="Generate", command=lambda: [self.generate(typ, int(nodes_n.get()), float(avg_out.get()), None), top.destroy()])
-            button.bind("<Return>", lambda _: [self.generate(typ, int(nodes_n.get()), float(avg_out.get()), None), top.destroy()])
+            button = Button(top, text="Generate", command=lambda: [self.generate(typ, int(nodes_n.get()), float(avg_out.get())), top.destroy()])
+            button.bind("<Return>", lambda _: [self.generate(typ, int(nodes_n.get()), float(avg_out.get())), top.destroy()])
 
         nodes_lab.grid(row=1,column=1,sticky="w")
         out_lab.grid(row=2,column=1,sticky="w")

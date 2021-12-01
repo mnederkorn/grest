@@ -61,7 +61,6 @@ class ParityGame(Game):
 
     @classmethod
     def generate(cls, n, p, h):
-        if not h<=n: raise Error("h has to be smaller than n")
         owner = np.random.choice([False, True], size=(n))
         edges = np.empty((n,n), dtype=bool)
         for e in edges:
