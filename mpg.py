@@ -6,14 +6,15 @@ from eg import EnergyGame
 from graphviz import Digraph
 from tempfile import gettempdir
 from itertools import count
+import time
+import copy
 
 class MeanPayoffGame(Game):
 
-    def __init__(self, owner, edges, threshold):
+    def __init__(self, owner, edges):
 
         super().__init__(owner, edges)
-        self.threshold = threshold
-
+        
     @classmethod
     def generate(cls, n, p, w):
         owner = np.random.choice([False, True], size=(n))
@@ -26,9 +27,56 @@ class MeanPayoffGame(Game):
         edges_value = np.random.randint(-w, w+1, size=(n,n))
         mini = np.iinfo(edges_value.dtype).min
         edges = np.where(edges_exist, edges_value, mini)
-        threshold = np.random.randint(-w*n,(w*n)+1, size=((1,)))
 
-        return cls(owner, edges, threshold)
+        return cls(owner, edges)
+
+    def solve_value_iter_matrix(self):
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        cur = np.zeros(len(self.owner)).reshape((-1,1))
+
+        for i in count(1):
+
+            old = np.array(cur)
+
+            edges_weight = np.where(self.edges != mini, (self.edges/i)+cur*((i-1)/i), np.nan)
+
+            cur = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
+
+            max_err = np.amax(np.abs(cur-old))
+
+            # iterate until max float precision is hit
+            if max_err <1e-4:
+                break
+
+        return cur
+
+    def solve_value_iter_lin(self):
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        cur = [0 for _ in range(len(self.owner))]
+
+        for i in count(1):
+
+            old = copy.copy(cur)
+
+            # edges_weight = np.where(self.edges != mini, (self.edges/i)+cur*((i-1)/i), np.nan)
+
+            edges_weight = [[(((i-1)/i)*cur[j])+(jth/i) for j,jth in enumerate(ith) if jth != mini] for ith in self.edges]
+
+            # cur = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
+
+            cur = [min(ith) if owner else max(ith) for ith,owner in zip(edges_weight,self.owner)]
+
+            max_err = max([abs(i-j) for i,j in zip(old,cur)])
+
+            # iterate until max float precision is hit
+            if max_err < 1e-4:
+                break
+
+        return cur
 
     def solve_zwick_paterson(self):
 
@@ -101,7 +149,7 @@ class MeanPayoffGame(Game):
 
         discount = 1-(1/(4*(len(self.owner)**3)*W))
 
-        return DiscountedPayoffGame(self.owner, self.edges, self.threshold, np.array((discount,)))
+        return DiscountedPayoffGame(self.owner, self.edges, np.array((discount,)))
 
     def to_eg(self):
 

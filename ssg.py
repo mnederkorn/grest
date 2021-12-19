@@ -46,7 +46,7 @@ class SimpleStochasticGame(Game):
             idx = np.where(self.owner == 2)
             cur[idx]=np.sum(self.avg_chance*old, 1)
 
-            max_err = np.amax(cur-old)
+            max_err = np.amax(np.abs(cur-old))
 
             # iterate until max float precision is hit
             if max_err == 0:

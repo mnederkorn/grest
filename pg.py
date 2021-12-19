@@ -39,17 +39,13 @@ def zielonka(owner, edges, priority):
         U = np.where(priority==m)[0]
         A = find_attractor(player, owner, edges, U)
         A_inv = np.setdiff1d(np.arange(owner.shape[0]), A)
-        # print(m,player,U,A,A_inv)
         even, odd = zielonka(owner[A_inv], edges[np.ix_(A_inv,A_inv)], priority[A_inv])
-        # print(even, odd)
         if (player and even.size == 0) or (not player and odd.size == 0):
             return (np.array([], dtype=np.int64),np.union1d(A_inv[odd],A)) if player else (np.union1d(A_inv[even],A),np.array([], dtype=np.int64))
         else:
             B = find_attractor(1-player, owner, edges, A_inv[even] if player else A_inv[odd])
             B_inv = np.setdiff1d(np.arange(owner.shape[0]), B)
-            # print("x",m,player,B,B_inv)
             even2, odd2 = zielonka(owner[B_inv], edges[np.ix_(B_inv,B_inv)], priority[B_inv])
-            # print("x",even2, odd2)
             return (np.union1d(B_inv[even2],B),B_inv[odd2]) if player else (B_inv[even2],np.union1d(B_inv[odd2],B))
 
 class ParityGame(Game):
@@ -110,7 +106,7 @@ class ParityGame(Game):
         mini = np.iinfo(edges_value.dtype).min
         edges = np.where(edges_exist, edges_value, mini)
 
-        return MeanPayoffGame(self.owner, edges, np.array((0,)))
+        return MeanPayoffGame(self.owner, edges)
 
     def visualise(self, target_path=None, strat=None, values=None, restr_values=None):
 
@@ -121,17 +117,17 @@ class ParityGame(Game):
             target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}")
 
         view = Digraph(format="png")
-        view.attr(bgcolor="#f0f0f0")
+        view.attr(bgcolor="#f0f0f0", forcelabels="True")
         for i,(owner, priority) in enumerate(zip(self.owner, self.priority)):
             if (type(values) == type(None)) and (type(restr_values) == type(None)):
-                label = f"<P(v<sub>{i}</sub>)={priority}>"
+                label = f"<v<sub>{i}</sub>>"
             elif (type(values) != type(None)) and (type(restr_values) == type(None)):
-                label = f"<P(v<sub>{i}</sub>)={priority}<br/>v(v<sub>{i}</sub>)={e_o[values[i]]}>"
+                label = f"<v(v<sub>{i}</sub>)={e_o[values[i]]}>"
             elif (type(values) == type(None)) and (type(restr_values) != type(None)):
-                label = f"<P(v<sub>{i}</sub>)={priority}<br/>v<sub>|</sub>(v<sub>{i}</sub>)={e_o[restr_values[i]]}>"
+                label = f"<v<sub>|</sub>(v<sub>{i}</sub>)={e_o[restr_values[i]]}>"
             else:
-                label = f"<P(v<sub>{i}</sub>)={priority}<br/>v(v<sub>{i}</sub>)={e_o[values[i]]}<br/>v<sub>|</sub>(v<sub>{i}</sub>)={e_o[restr_values[i]]}>"
-            view.node(f"{i}", label=label, shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
+                label = f"<v(v<sub>{i}</sub>)={e_o[values[i]]}<br/>v<sub>|</sub>(v<sub>{i}</sub>)={e_o[restr_values[i]]}>"
+            view.node(f"{i}", label=label, xlabel=f"{priority}", shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
         idx = np.where(self.edges==True)
         for s,t in zip(idx[0],idx[1]):
             view.edge(str(s),str(t), fontcolor=colour[self.owner[s]][strat[s]==t], color=colour[self.owner[s]][strat[s]==t])

@@ -2,6 +2,9 @@ from game import *
 import numpy as np
 from tempfile import gettempdir
 from graphviz import Digraph
+from numba import jit
+from ortools.linear_solver import pywraplp
+from itertools import count
 
 def find_negative_cycle_nodes(edges):
 
@@ -298,7 +301,7 @@ class EnergyGame(Game):
         for v in self.edges:
             max_cycle_cost += np.max((0,np.max(-(v[v!=mini]))))
 
-        nW = self.vertices*np.max(np.abs(self.edges[np.where(self.edges!=mini)]))
+        nW = len(self.owner)*np.max(np.abs(self.edges[np.where(self.edges!=mini)]))
 
         edges_p1 = self.edges[np.ix_(p1,p1)]
 
@@ -341,6 +344,9 @@ class EnergyGame(Game):
 
         while True:
 
+            print("strat",strat)
+            print(v)
+
             strat_hist = np.array(strat)
 
             solver = pywraplp.Solver.CreateSolver('GLOP')
@@ -349,10 +355,12 @@ class EnergyGame(Game):
 
             for s,p in enumerate(owner[:-1]):
                 if not p:
-                    solver.Add(v[s] >= (v[strat[s]]-float(edges[s,strat[s]])))
+                    x=solver.Add(v[s] >= (v[strat[s]]-float(edges[s,strat[s]])))
+                    print("constraint",s,strat[s],float(edges[s,strat[s]]))
                 else:
                     for t in np.where(edges[s]!=mini)[0]:
                         solver.Add(v[s] >= (v[t]-float(edges[s,t])))
+                        print("constraint",s,t,float(edges[s,t]))
 
             solver.Add(v[-1] == float(0))
 
@@ -365,7 +373,13 @@ class EnergyGame(Game):
 
             status = solver.Solve()
 
-            v = np.array([v_n.solution_value() for v_n in v])
+            if status != solver.OPTIMAL:
+                print("status",status)
+                return("asdf")
+
+            v = np.array([np.int32(np.rint(v_n.solution_value())) for v_n in v])
+
+            # print("v",v)
 
             while True:
 
@@ -374,19 +388,47 @@ class EnergyGame(Game):
                 if np.any(strat!=strat_hist):
                     break
 
-                c1 = (v!=0) # v in [V]^f
-                c2 = v.reshape(-1,1)==np.where(edges!=mini, np.clip(v-edges,0,3*nW), mini)
-                c3 = 0<v
-                c4 = 0<np.clip(v-edges,0,None)
-                c5 = np.clip(v-edges,0,None)<=(3*nW)
+                ########
 
-                V_p0 = c1&np.any(c2&c3&c4&c5, 1)
+                v_ = np.ones(len(v),dtype=bool)
 
-                V_p1 = c1&np.all((~c2|(c3&c4&c5)), 1)
+                for x in count():
 
-                V = np.where(owner, V_p1, V_p0)
+                    v_h = v_.copy()
 
-                if np.any(V) == False:
+                    c1 = v!=0
+                    # c2 also necessitates existance of (v,v')
+                    c2 = v.reshape(-1,1)==np.where(edges!=mini, np.clip(v-edges,0,3*nW), mini)
+                    c3 = 0<v
+                    c4 = 0<np.where(edges!=mini, np.clip(v-edges,0,None), mini)
+                    c5 = np.where(edges!=mini, np.clip(v-edges,0,None), mini)<=3*nW
+                    c6 = v_
+
+                    V_p0 = c1&np.any(c2&c3&c4&c5&c6, 1)
+
+                    V_p1 = c1&np.all((~c2|(c3&c4&c5&c6)), 1)
+
+                    V = np.where(owner, V_p1, V_p0)
+
+                    v_ = V
+
+                    # print("c1",c1)
+                    # print("c2",c2)
+                    # print("c3",c3)
+                    # print("c4",c4)
+                    # print("c5",c5)
+                    # print("c6",c6)
+
+                    # print("V_p0",V_p0)
+                    # print("V_p1",V_p1)
+                    # print("v_,V",v_,V)
+
+                    if np.all(v_==v_h):
+                        break
+
+                ########
+
+                if not np.any(v_):
 
                     full = np.full(self.edges.shape[0], -1, dtype=np.int32)
 
@@ -395,10 +437,18 @@ class EnergyGame(Game):
                     full[np.setdiff1d(np.arange(self.edges.shape[0]), p1[cycle_nodes])]=v
                     return full
                 else:
-                    s1 = (v-edges)[np.where((v>edges)&(edges!=mini))]
-                    s2 = (v.reshape(-1,1)-v)[np.where(v.reshape(-1,1)>v)]
-                    s3 = v[np.where(v!=0)]
-                    v = np.where(V, v-np.min([np.min(s1),np.min(s2),np.min(s3)]), v)
+                    # print("decr v_",v_)
+                    # s1 = (v-edges)[np.where((v>edges)&(edges!=mini))]
+                    # s2 = (v.reshape(-1,1)-v)[np.where(v.reshape(-1,1)>v)]
+                    # s3 = v[np.where(v!=0)]
+                    # v = np.where(V, v-np.min([np.min(s1),np.min(s2),np.min(s3)]), v)
+
+                    # TODO minus bigger than 1
+
+                    # s1 = (v-edges)[np.where((v>edges)&(edges!=mini))]
+                    # s2 = (v.reshape(-1,1)-v)[np.where(v.reshape(-1,1)>v)]
+                    # s3 = v[np.where(v!=0)]
+                    v[v_]-=1
 
     def solve(self, strat=None):
 

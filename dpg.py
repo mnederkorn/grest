@@ -4,13 +4,13 @@ from ortools.linear_solver import pywraplp
 from ssg import SimpleStochasticGame
 from graphviz import Digraph
 from tempfile import gettempdir
+import copy
 
 class DiscountedPayoffGame(Game):
 
-    def __init__(self, owner, edges, threshold, discount):
+    def __init__(self, owner, edges, discount):
 
         super().__init__(owner, edges)
-        self.threshold = threshold
         self.discount = discount
 
     @classmethod
@@ -25,10 +25,9 @@ class DiscountedPayoffGame(Game):
         edges_value = np.random.randint(-w, w+1, size=(n,n))
         mini = np.iinfo(edges_value.dtype).min
         edges = np.where(edges_exist, edges_value, mini)
-        threshold = np.random.randint(-w*n,(w*n)+1, size=((1,)))
         discount = np.random.rand(1)
 
-        return cls(owner, edges, threshold, discount)
+        return cls(owner, edges, discount)
 
     def to_ssg(self):
 
@@ -63,7 +62,7 @@ class DiscountedPayoffGame(Game):
             
         return SimpleStochasticGame(owner, ssg_edges, avg_chance)
 
-    def solve_value_iter(self):
+    def solve_value_iter_matrix(self):
 
         mini = np.iinfo(self.edges.dtype).min
 
@@ -77,10 +76,34 @@ class DiscountedPayoffGame(Game):
 
             cur = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
 
-            max_err = np.amax(cur-old)
+            # print(edges_weight)
+
+            max_err = np.amax(np.abs(cur-old))
 
             # iterate until max float precision is hit
-            if max_err == 0:
+            if max_err <1e-14:
+                break
+
+        return cur
+
+    def solve_value_iter_lin(self):
+
+        self.discount=float(self.discount)
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        cur = [0 for _ in range(len(self.owner))]
+
+        while True:
+
+            old = copy.copy(cur)
+
+            edges_weight = [[self.discount*cur[j]+(1-self.discount)*jth for j,jth in enumerate(ith) if jth != mini] for ith in self.edges]
+
+            cur = [min(ith) if owner else max(ith) for ith,owner in zip(edges_weight,self.owner)]
+
+            max_err = max([abs(i-j) for i,j in zip(old,cur)])
+            if max_err <1e-14:
                 break
 
         return cur

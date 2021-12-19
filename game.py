@@ -42,5 +42,5 @@ class Game:
 
         mini = np.iinfo(edges.dtype).min
         maxi = np.iinfo(edges.dtype).max
-
-        print(np.where(edges==mini,"-",np.where(edges==maxi,"+",edges)))
+        
+        print(np.where(edges==mini,"-",np.where(edges==maxi,"+",np.where(edges==np.nan,"x",edges))))
