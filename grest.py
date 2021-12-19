@@ -13,7 +13,7 @@ from func_timeout import func_timeout, FunctionTimedOut
 
 if __name__ == '__main__':
 
-    n = int((2**.5)**3)
+    n = int((2**.5)**8)
 
     # outdegree of every vertex has to be >=1
     # p is taken as if this wasn't the case
@@ -38,32 +38,22 @@ if __name__ == '__main__':
 
     # # eg demo
     while True:
-        # eg = EnergyGame.generate(n, p, w)
+        eg = EnergyGame.generate(n, p, w)
         # eg = Game.load(r"C:\ata\uni\master\grest\grest\graphs\EnergyGame_2021-12-19-00-16-42.bin")
         # eg = Game.load(r"C:\ata\uni\master\grest\grest\graphs\EnergyGame_2021-12-19-01-54-53.bin")
         # eg = Game.load(r"C:\ata\uni\master\grest\grest\graphs\EnergyGame_2021-12-19-16-32-02.bin")
-        eg = Game.load(r"C:\ata\uni\master\grest\grest\graphs\EnergyGame_2021-12-19-19-39-53.bin")
-        # x1 = eg.solve_value_iter()
-        # x2 = eg.solve_bcdgr()
+        # eg = Game.load(r"C:\ata\uni\master\grest\grest\graphs\EnergyGame_2021-12-19-19-39-53.bin")
         # eg.visualise()
         # eg.save()
+        x1 = eg.solve_value_iter()
+        x2 = eg.solve_bcdgr()
         x3 = eg.solve_strat_iter_below()
         x4 = eg.solve_strat_iter_above()
-        # print(x1)
-        # print(x2)
-        # print(x3)
-        # print(x4)
-        # exit()
-
-        if x4=="asdf":
-            eg.visualise()
-            eg.save()
-            exit()
-
+        print(x1,x2,x3,x4)
 
         if np.any(x3!=x4):
-            # print(x1)
-            # print(x2)
+            print(x1)
+            print(x2)
             print(x3)
             print(x4)
             # eg.visualise()

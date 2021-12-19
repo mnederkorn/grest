@@ -6,6 +6,7 @@ from numba import jit
 from ortools.linear_solver import pywraplp
 from itertools import count
 
+# BellmanFord
 def find_negative_cycle_nodes(edges):
 
     mini = np.iinfo(edges.dtype).min
@@ -21,39 +22,39 @@ def find_negative_cycle_nodes(edges):
     for i in range(1,edges_src.shape[0]+1):
 
         src_is_pred = np.tile((dist!=maxi).reshape(-1,1),edges_src.shape[0])
-        shorter = (new_dist:=(dist.reshape(-1,1)+edges_src))<dist
+        new_dist = dist.reshape(-1,1)+edges_src
+        shorter = new_dist<dist
 
-        maa=np.ma.masked_array(new_dist, ~(valids:=(edges_src!=mini)&src_is_pred))
+        valids = (edges_src!=mini)&src_is_pred
+
+        maa=np.ma.masked_array(new_dist, ~valids)
 
         exists_shorter = np.any(valids&shorter,axis=0)
 
-        if i!=(edges_src.shape[0]):
-            shorter_idx = np.argmin(maa, axis=0)
+        shorter_idx = np.argmin(maa, axis=0)
 
-            pred = np.where(exists_shorter, shorter_idx, pred)
-            dist = np.where(exists_shorter, new_dist[shorter_idx,np.arange(edges_src.shape[1])], dist)
+        pred = np.where(exists_shorter, shorter_idx, pred)
+        dist = np.where(exists_shorter, new_dist[shorter_idx,np.arange(edges_src.shape[1])], dist)
 
-        else:
+    cycle_nodes_t = set()
 
-            cycle_nodes_t = set()
+    for n in np.where(exists_shorter)[0]:
 
-            for n in np.where(exists_shorter)[0]:
+        cycle_nodes = set()
 
-                cycle_nodes = set()
+        s = [n]
 
-                s = [n]
+        for x in range(edges_src.shape[0]-1):
+            if pred[n] == s[0]:
+                cycle_nodes|=set(s)
+                break
+            else:
+                s.append(pred[n])
+                n=pred[n]
 
-                for x in range(edges_src.shape[0]-1):
-                    if pred[n] == s[0]:
-                        cycle_nodes|=set(s)
-                        break
-                    else:
-                        s.append(pred[n])
-                        n=pred[n]
+        cycle_nodes_t|=cycle_nodes
 
-                cycle_nodes_t|=cycle_nodes
-
-            return np.array(list(cycle_nodes_t))
+    return np.array(list(cycle_nodes_t))
 
 class EnergyGame(Game):
 
@@ -344,9 +345,6 @@ class EnergyGame(Game):
 
         while True:
 
-            print("strat",strat)
-            print(v)
-
             strat_hist = np.array(strat)
 
             solver = pywraplp.Solver.CreateSolver('GLOP')
@@ -356,11 +354,9 @@ class EnergyGame(Game):
             for s,p in enumerate(owner[:-1]):
                 if not p:
                     x=solver.Add(v[s] >= (v[strat[s]]-float(edges[s,strat[s]])))
-                    print("constraint",s,strat[s],float(edges[s,strat[s]]))
                 else:
                     for t in np.where(edges[s]!=mini)[0]:
                         solver.Add(v[s] >= (v[t]-float(edges[s,t])))
-                        print("constraint",s,t,float(edges[s,t]))
 
             solver.Add(v[-1] == float(0))
 
@@ -373,13 +369,7 @@ class EnergyGame(Game):
 
             status = solver.Solve()
 
-            if status != solver.OPTIMAL:
-                print("status",status)
-                return("asdf")
-
             v = np.array([np.int32(np.rint(v_n.solution_value())) for v_n in v])
-
-            # print("v",v)
 
             while True:
 
@@ -387,8 +377,6 @@ class EnergyGame(Game):
 
                 if np.any(strat!=strat_hist):
                     break
-
-                ########
 
                 v_ = np.ones(len(v),dtype=bool)
 
@@ -412,17 +400,6 @@ class EnergyGame(Game):
 
                     v_ = V
 
-                    # print("c1",c1)
-                    # print("c2",c2)
-                    # print("c3",c3)
-                    # print("c4",c4)
-                    # print("c5",c5)
-                    # print("c6",c6)
-
-                    # print("V_p0",V_p0)
-                    # print("V_p1",V_p1)
-                    # print("v_,V",v_,V)
-
                     if np.all(v_==v_h):
                         break
 
@@ -437,17 +414,6 @@ class EnergyGame(Game):
                     full[np.setdiff1d(np.arange(self.edges.shape[0]), p1[cycle_nodes])]=v
                     return full
                 else:
-                    # print("decr v_",v_)
-                    # s1 = (v-edges)[np.where((v>edges)&(edges!=mini))]
-                    # s2 = (v.reshape(-1,1)-v)[np.where(v.reshape(-1,1)>v)]
-                    # s3 = v[np.where(v!=0)]
-                    # v = np.where(V, v-np.min([np.min(s1),np.min(s2),np.min(s3)]), v)
-
-                    # TODO minus bigger than 1
-
-                    # s1 = (v-edges)[np.where((v>edges)&(edges!=mini))]
-                    # s2 = (v.reshape(-1,1)-v)[np.where(v.reshape(-1,1)>v)]
-                    # s3 = v[np.where(v!=0)]
                     v[v_]-=1
 
     def solve(self, strat=None):
