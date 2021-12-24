@@ -3,6 +3,9 @@ import numpy as np
 from mpg import MeanPayoffGame
 from tempfile import gettempdir
 from graphviz import Digraph
+from math import ceil
+from itertools import count
+from time import sleep
 
 e_o = {0:"Even",1:"Odd"}
 
@@ -48,6 +51,25 @@ def zielonka(owner, edges, priority):
             even2, odd2 = zielonka(owner[B_inv], edges[np.ix_(B_inv,B_inv)], priority[B_inv])
             return (np.union1d(B_inv[even2],B),B_inv[odd2]) if player else (B_inv[even2],np.union1d(B_inv[odd2],B))
 
+def zielonka2(owner, edges, priority, player, h, restr):
+
+    if len(owner)==0:
+        return np.array([], dtype=int)
+    else:
+        N_h = np.where(priority==h)[0]
+        N_h_a = find_attractor(player, owner, edges, N_h)
+        H = np.setdiff1d(np.arange(len(owner)), N_h_a)
+        W_0 = zielonka2(owner[H], edges[np.ix_(H,H)], priority[H], 1-player, h-1, H)
+        W_0 = H[W_0]
+        W_0_a = find_attractor(1-player, owner, edges, W_0)
+        G = np.setdiff1d(np.arange(len(owner)), W_0_a)
+        if len(W_0)==0:
+            return G
+        else:
+            win_G = zielonka2(owner[G], edges[np.ix_(G,G)], priority[G], player, h, G)
+            return G[win_G]
+
+
 class ParityGame(Game):
 
     def __init__(self, owner, edges, priority):
@@ -57,6 +79,8 @@ class ParityGame(Game):
 
     @classmethod
     def generate(cls, n, p, h):
+        assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
+        p=((p*n)-1)/(n-1)
         owner = np.random.choice([False, True], size=(n))
         edges = np.empty((n,n), dtype=bool)
         for e in edges:
@@ -74,6 +98,46 @@ class ParityGame(Game):
 
         ret = np.full(self.owner.shape[0], False)
         ret[z[1]] = True
+
+        return ret
+
+    def solve_strat(self, solver):
+
+        z = solver(self)
+
+        ret = np.full(len(self.owner), -1, dtype=int)
+
+        for i,v in enumerate(self.edges):
+            w = np.where(v)[0]
+            while True:
+                cl = ceil(len(w)/2)
+                one,two = w[:cl],w[cl:]
+                e = self.edges.copy()
+                e[i]=False
+                e[i,one]=True
+                x = solver(ParityGame(self.owner, e, self.priority))
+                if np.all(x==z):
+                    if len(one)==1:
+                        ret[i]=one[0]
+                        break
+                    else:
+                        w = one
+                else:
+                    w = two
+            self.edges[i]=np.zeros(len(self.owner), dtype=bool)
+            self.edges[i,ret[i]]=True
+        return ret
+
+    def solve_zielonka2(self):
+
+        m=np.max(self.priority)
+
+        h = m+(m%2)
+
+        z = zielonka2(self.owner, self.edges, self.priority, 0, h, np.arange(len(self.owner), dtype=int))
+
+        ret = np.full(self.owner.shape[0], True)
+        ret[z] = False
 
         return ret
 

@@ -17,6 +17,8 @@ class MeanPayoffGame(Game):
         
     @classmethod
     def generate(cls, n, p, w):
+        assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
+        p=((p*n)-1)/(n-1)
         owner = np.random.choice([False, True], size=(n))
         edges_exist = np.empty((n,n), dtype=bool)
         for e in edges_exist:
@@ -115,6 +117,36 @@ class MeanPayoffGame(Game):
                         break
 
         return v
+
+    def solve_strat(self, solver):
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        z = solver(self)
+
+        ret = np.full(len(self.owner), -1, dtype=int)
+
+        for i,v in enumerate(self.edges):
+            w = np.where(v!=mini)[0]
+            while True:
+                cl = ceil(len(w)/2)
+                one,two = w[:cl],w[cl:]
+                e = self.edges.copy()
+                e[i]=mini
+                e[i,one]=self.edges[i,one]
+                x = solver(MeanPayoffGame(self.owner, e))
+                if np.all(x==z):
+                    if len(one)==1:
+                        ret[i]=one[0]
+                        break
+                    else:
+                        w = one
+                else:
+                    w = two
+            tmp = self.edges[i,ret[i]]
+            self.edges[i]=mini
+            self.edges[i,ret[i]]=tmp
+        return ret
 
     def solve(self, strat=None):
 

@@ -6,13 +6,16 @@ from graphviz import Digraph
 
 class SimpleStochasticGame(Game):
 
-    def __init__(self, owner, edges, avg_chance):
+    def __init__(self, owner, edges, avg_chance, stopping):
 
         super().__init__(owner, edges)
         self.avg_chance = avg_chance
+        self.stopping = stopping
 
     @classmethod
     def generate(cls, n, p):
+        assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
+        p=((p*n)-1)/(n-1)
         owner = np.random.randint(0, 3, size=(n), dtype=np.uint8)
         edges = np.empty((n,n+2), dtype=bool)
         for e in edges:
@@ -27,7 +30,7 @@ class SimpleStochasticGame(Game):
 
         avg_chance = (avg_chance.transpose()/np.sum(avg_chance,1)).transpose()
 
-        return cls(owner, edges, avg_chance)
+        return cls(owner, edges, avg_chance, False)
 
     def solve_value_iter(self):
 
@@ -54,7 +57,9 @@ class SimpleStochasticGame(Game):
 
         return cur
 
-    def solve_strat_iter(self): 
+    def solve_strat_iter(self):
+
+        assert self.stopping, "SSG needs to be stopping to be solved with strategy iteration. To ensure SSG is stopping, generate DPG and convert to SSG via DiscountedPayoffGame.to_ssg."
 
         p0 = np.where(self.owner==0)[0]
         p1 = np.where(self.owner==1)[0]
@@ -132,6 +137,15 @@ class SimpleStochasticGame(Game):
             ret = self.solve_value_iter()
 
         return ret
+
+    # strats for avg/rng vertices as -1
+    def solve_strat_value_iter(self):
+
+        z = self.solve_value_iter()
+
+        strats = np.where(self.owner==2, -1, np.where(self.owner==0, np.nanargmax(np.where(self.edges, z, np.nan), 1), np.nanargmin(np.where(self.edges, z, np.nan), 1)))
+
+        return strats
 
     def visualise(self, target_path=None, strat=None, values=None, restr_values=None):
 

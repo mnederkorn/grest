@@ -15,6 +15,8 @@ class DiscountedPayoffGame(Game):
 
     @classmethod
     def generate(cls, n, p, w):
+        assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
+        p=((p*n)-1)/(n-1)
         owner = np.random.choice([False, True], size=(n))
         edges_exist = np.empty((n,n), dtype=bool)
         for e in edges_exist:
@@ -30,6 +32,8 @@ class DiscountedPayoffGame(Game):
         return cls(owner, edges, discount)
 
     def to_ssg(self):
+
+        # to_ssg_strat = np.argmax(ssg.edges[strat[np.where(strat!=-1)],:-2], 1)
 
         mini = np.iinfo(self.edges.dtype).min
 
@@ -51,6 +55,8 @@ class DiscountedPayoffGame(Game):
 
         avg_chance = np.zeros((f3, vertices+2))
 
+        strat_map = np.zeros((len(self.owner),len(self.owner)), dtype=bool)
+
         for i,edge in enumerate(zip(f3pos[0],f3pos[1])):
             ssg_edges[edge[0], i+len(self.owner)] = True
             ssg_edges[i+len(self.owner), edge[1]] = True
@@ -60,7 +66,7 @@ class DiscountedPayoffGame(Game):
             avg_chance[i, -2] = (1-self.discount)*(1-(edges[edge]/(2*W)))
             avg_chance[i, -1] = (1-self.discount)*(edges[edge]/(2*W))
             
-        return SimpleStochasticGame(owner, ssg_edges, avg_chance)
+        return SimpleStochasticGame(owner, ssg_edges, avg_chance, True)
 
     def solve_value_iter_matrix(self):
 
@@ -108,20 +114,14 @@ class DiscountedPayoffGame(Game):
 
         return cur
 
-    def solve_strat_iter(self):        
+    def solve_strat_iter(self):
 
         p0 = np.where(self.owner==False)[0]
         p1 = np.where(self.owner==True)[0]
 
         mini = np.iinfo(self.edges.dtype).min
 
-        rnd_strat = np.apply_along_axis(lambda x: np.random.choice(np.where(x!=mini)[0]), 1, self.edges[p0])
-
-        rnd_strat = np.vstack((p0,rnd_strat))
-
-        rnd_strat = np.transpose(rnd_strat)
-
-        strat = rnd_strat
+        strat = np.where(self.owner, -1, np.apply_along_axis(lambda x: np.random.choice(np.where(x!=mini)[0]), 1, self.edges))
 
         strat_hist = []
 
@@ -136,12 +136,12 @@ class DiscountedPayoffGame(Game):
 
             v = [solver.NumVar(float(-W), float(W), str(x)) for x in range(len(self.owner))]
 
-            for s,t in strat:
-                solver.Add(v[s] == (1-float(self.discount))*float(self.edges[s,t])+float(self.discount)*v[t])
-
-            for s in p1:
-                for t in np.where(self.edges[s]!=mini)[0]:
-                    solver.Add(v[s] <= (1-float(self.discount))*float(self.edges[s,t])+float(self.discount)*v[t])
+            for s,p in enumerate(self.owner):
+                if not p:
+                    solver.Add(v[s] == (1-float(self.discount))*float(self.edges[s,strat[s]])+float(self.discount)*v[strat[s]])
+                else:
+                    for t in np.where(self.edges[s]!=mini)[0]:
+                        solver.Add(v[s] <= (1-float(self.discount))*float(self.edges[s,t])+float(self.discount)*v[t])
 
             obj_func = v[0]
 
@@ -152,16 +152,9 @@ class DiscountedPayoffGame(Game):
 
             status = solver.Solve()
 
-            strat = np.empty(0, dtype=np.int64)
-
-            for s in p0:
-                idx = np.where(self.edges[s]!=mini)[0]
-                new = np.argmax([(1-self.discount)*self.edges[s,t]+self.discount*v[t].solution_value() for t in idx])
-                strat = np.hstack((strat, idx[new]))
-
-            strat = np.transpose(np.vstack((p0,strat)))
-
-        return np.array([v_n.solution_value() for v_n in v])
+            strat = np.where(self.owner, strat, np.argmax(((1-self.discount)*self.edges)+(self.discount*(np.array([v_n.solution_value() for v_n in v]))), 1))
+            
+        return np.array([v_n.solution_value() for v_n in v]),strat
 
     def solve(self, strat=None):
 
@@ -176,15 +169,23 @@ class DiscountedPayoffGame(Game):
             for i in np.where(strat!=-1)[0]:
                 self.edges[i,strat[i]]=old[i,strat[i]]
 
-            ret = self.solve_value_iter()
+            ret = self.solve_value_iter_matrix()
 
             self.edges = old
 
         else:
 
-            ret = self.solve_value_iter()
+            ret = self.solve_value_iter_matrix()
 
         return ret
+
+    def solve_strat_value_iter_matrix(self):
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        z = self.solve_value_iter_matrix()
+
+        return np.argmin(np.where(self.edges!=mini, np.abs(((self.discount*z)+((1-self.discount)*self.edges))-z.reshape(-1,1)), 1000),1)
 
     def visualise(self, target_path=None, strat=None, values=None, restr_values=None):
 

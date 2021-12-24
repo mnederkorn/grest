@@ -54,7 +54,55 @@ def find_negative_cycle_nodes(edges):
 
         cycle_nodes_t|=cycle_nodes
 
-    return np.array(list(cycle_nodes_t))
+    ret = np.array(list(cycle_nodes_t))
+
+    if len(ret)!=0:
+        return ret, pred[ret]
+    else:
+        return ret, np.array([],dtype=np.int64)
+
+# BellmanFord finds (at least) one negative cycle but not necessarily all so we need to iterate
+def find_all_negative_cycle_nodes(edges):
+
+    mini = np.iinfo(edges.dtype).min
+
+    neg_strat = np.full(len(edges), -1, dtype=np.int64)
+
+    cycle_nodes = np.array([],dtype=edges.dtype)
+
+    while True:
+        restriction = np.setdiff1d(np.arange(edges.shape[0]),cycle_nodes)
+        ret, ret_strat = find_negative_cycle_nodes(edges[np.ix_(restriction,restriction)])
+        if len(ret)==0:
+            break
+        else:
+            neg_strat[restriction[ret]] = ret_strat
+            cycle_nodes=np.hstack((cycle_nodes,restriction[ret]))
+
+    # print("???",cycle_nodes,neg_strat)
+
+    if len(cycle_nodes)!=0:
+        while True:
+            old=len(cycle_nodes)
+
+            cycle_nodes=np.union1d(cycle_nodes,np.nonzero(np.any(edges[:,cycle_nodes]!=mini, axis=1)))
+
+            # print("aaaaaaa")
+            # print(cycle_nodes)
+            # Game.printm(edges[:,cycle_nodes])
+            # print(edges[:,cycle_nodes]!=mini)
+            # print(np.any(edges[:,cycle_nodes]!=mini, axis=1))
+            # print(np.argmax(edges[:,cycle_nodes], 1))
+            # print(neg_strat)
+
+            neg_strat[np.any(edges[:,cycle_nodes]!=mini, axis=1)]=np.where(neg_strat==-1, np.argmax(edges[:,cycle_nodes], 1), neg_strat)[np.any(edges[:,cycle_nodes]!=mini, axis=1)]
+            # print(neg_strat)
+            if len(cycle_nodes)==old:
+                break
+
+    # print("???",cycle_nodes,neg_strat)
+
+    return cycle_nodes, neg_strat[cycle_nodes]
 
 class EnergyGame(Game):
 
@@ -64,6 +112,8 @@ class EnergyGame(Game):
 
     @classmethod
     def generate(cls, n, p, w):
+        assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
+        p=((p*n)-1)/(n-1)
         owner = np.random.choice([False, True], size=(n))
         edges_exist = np.empty((n,n), dtype=bool)
         for e in edges_exist:
@@ -213,22 +263,7 @@ class EnergyGame(Game):
 
         edges_p1 = self.edges[np.ix_(p1,p1)]
 
-        cycle_nodes = np.array([],dtype=edges_p1.dtype)
-
-        while True:
-            restriction = np.setdiff1d(np.arange(edges_p1.shape[0]),cycle_nodes)
-            ret = find_negative_cycle_nodes(edges_p1[np.ix_(restriction,restriction)])
-            if ret.shape==(0,):
-                break
-            else:
-                cycle_nodes=np.hstack((cycle_nodes,restriction[ret]))
-
-        if cycle_nodes.shape!=(0,):
-            for i in range(1,edges_p1.shape[0]-(cycle_nodes.shape[0]-1)):
-                old=cycle_nodes.shape
-                cycle_nodes=np.union1d(cycle_nodes,np.nonzero(np.any(edges_p1[:,cycle_nodes]!=mini, axis=1)))
-                if cycle_nodes.shape==old:
-                    break
+        cycle_nodes, neg_strat = find_all_negative_cycle_nodes(edges_p1)
 
         # p1[cycle_nodes] 
         # is the indices of the vertices in V_1 that can reach negative cycles in total control of player 1 (in self.edges indices reference)
@@ -244,13 +279,9 @@ class EnergyGame(Game):
         owner = owner[restriction]
         edges = edges[np.ix_(restriction,restriction)]
 
-        # strat iteration for guessing for player 1/max player/"energy depleting player"
+        # strat iteration for guessing for player 1/"depleting"
 
-        p1_ = np.where(owner==True)[0]
-
-        rnd_strat = np.apply_along_axis(lambda v: np.random.choice(np.where(v!=mini)[0]), 1, edges)
-
-        strat = rnd_strat
+        strat = np.where(owner, np.apply_along_axis(lambda v: np.random.choice(np.where(v!=mini)[0]), 1, edges), -1)
 
         strat_hist = []
 
@@ -260,11 +291,11 @@ class EnergyGame(Game):
 
             f = np.zeros(owner.shape[0],dtype=np.int32)
 
-            oldest = np.array(f)  
+            oldest = np.array(f)
 
             while True:
 
-                old = np.array(f)                
+                old = np.array(f)
 
                 edges_weight = np.where(edges!=mini,np.maximum(np.minimum(f-edges,3*nW),0),edges)
 
@@ -287,7 +318,18 @@ class EnergyGame(Game):
 
         full[np.setdiff1d(np.arange(self.edges.shape[0]), p1[cycle_nodes])]=f
 
-        return full
+        # print(p1)
+        # print(cycle_nodes)
+        # print(neg_strat)
+
+        return_strat = np.full(len(self.edges), -1)
+        if len(cycle_nodes)!=0:
+            return_strat[p1[cycle_nodes]]=neg_strat
+        # print("++",return_strat)
+
+        return_strat[np.setdiff1d(np.arange(len(self.edges)), p1[cycle_nodes])] = strat[:-1]
+
+        return full, return_strat
 
     def solve_strat_iter_above(self):
 
@@ -306,22 +348,7 @@ class EnergyGame(Game):
 
         edges_p1 = self.edges[np.ix_(p1,p1)]
 
-        cycle_nodes = np.array([],dtype=edges_p1.dtype)
-
-        while True:
-            restriction = np.setdiff1d(np.arange(edges_p1.shape[0]),cycle_nodes)
-            ret = find_negative_cycle_nodes(edges_p1[np.ix_(restriction,restriction)])
-            if ret.shape==(0,):
-                break
-            else:
-                cycle_nodes=np.hstack((cycle_nodes,restriction[ret]))
-
-        if cycle_nodes.shape!=(0,):
-            for i in range(1,edges_p1.shape[0]-(cycle_nodes.shape[0]-1)):
-                old=cycle_nodes.shape
-                cycle_nodes=np.union1d(cycle_nodes,np.nonzero(np.any(edges_p1[:,cycle_nodes]!=mini, axis=1)))
-                if cycle_nodes.shape==old:
-                    break
+        cycle_nodes, neg_strat = find_all_negative_cycle_nodes(edges_p1)
 
         # p1[cycle_nodes] 
         # is the indices of the vertices in V_1 that can reach negative cycles in total control of player 1 (in self.edges indices reference)
@@ -337,9 +364,9 @@ class EnergyGame(Game):
         owner = owner[restriction]
         edges = edges[np.ix_(restriction,restriction)]
 
-        # strat iteration  for player 1/min player/"energy conserving player"
+        # strat iteration for player 0/"charging"
 
-        strat = np.full(edges.shape[0], edges.shape[0]-1, dtype=np.int32)
+        strat = np.where(owner, -1, np.full(len(edges), edges.shape[0]-1, dtype=np.int32))
 
         strat_hist = np.empty(strat.shape)
 
@@ -353,7 +380,7 @@ class EnergyGame(Game):
 
             for s,p in enumerate(owner[:-1]):
                 if not p:
-                    x=solver.Add(v[s] >= (v[strat[s]]-float(edges[s,strat[s]])))
+                    solver.Add(v[s] >= (v[strat[s]]-float(edges[s,strat[s]])))
                 else:
                     for t in np.where(edges[s]!=mini)[0]:
                         solver.Add(v[s] >= (v[t]-float(edges[s,t])))
@@ -412,9 +439,24 @@ class EnergyGame(Game):
                     v = np.where(v<nW, v, -1)[:-1]
 
                     full[np.setdiff1d(np.arange(self.edges.shape[0]), p1[cycle_nodes])]=v
-                    return full
+
+                    return_strat = np.full(len(self.edges), -1)
+                    if len(cycle_nodes)!=0:
+                        return_strat[p1[cycle_nodes]]=neg_strat
+                    # print("++",return_strat)
+
+                    return_strat[np.setdiff1d(np.arange(len(self.edges)), p1[cycle_nodes])] = strat[:-1]
+                    return full, return_strat
                 else:
                     v[v_]-=1
+
+    def solve_strat_bcdgr(self):
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        z = self.solve_bcdgr()
+
+        Game.printm(np.where(self.edges!=mini, z.reshape(-1,1)+self.edges, mini))
 
     def solve(self, strat=None):
 
