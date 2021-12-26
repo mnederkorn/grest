@@ -5,6 +5,7 @@ from graphviz import Digraph
 from numba import jit
 from ortools.linear_solver import pywraplp
 from itertools import count
+import copy
 
 # BellmanFord
 def find_negative_cycle_nodes(edges):
@@ -79,28 +80,15 @@ def find_all_negative_cycle_nodes(edges):
             neg_strat[restriction[ret]] = ret_strat
             cycle_nodes=np.hstack((cycle_nodes,restriction[ret]))
 
-    # print("???",cycle_nodes,neg_strat)
-
     if len(cycle_nodes)!=0:
         while True:
             old=len(cycle_nodes)
 
             cycle_nodes=np.union1d(cycle_nodes,np.nonzero(np.any(edges[:,cycle_nodes]!=mini, axis=1)))
 
-            # print("aaaaaaa")
-            # print(cycle_nodes)
-            # Game.printm(edges[:,cycle_nodes])
-            # print(edges[:,cycle_nodes]!=mini)
-            # print(np.any(edges[:,cycle_nodes]!=mini, axis=1))
-            # print(np.argmax(edges[:,cycle_nodes], 1))
-            # print(neg_strat)
-
             neg_strat[np.any(edges[:,cycle_nodes]!=mini, axis=1)]=np.where(neg_strat==-1, np.argmax(edges[:,cycle_nodes], 1), neg_strat)[np.any(edges[:,cycle_nodes]!=mini, axis=1)]
-            # print(neg_strat)
             if len(cycle_nodes)==old:
                 break
-
-    # print("???",cycle_nodes,neg_strat)
 
     return cycle_nodes, neg_strat[cycle_nodes]
 
@@ -127,7 +115,7 @@ class EnergyGame(Game):
 
         return cls(owner, edges)
 
-    def solve_bcdgr(self):
+    def solve_value_bcdgr(self):
 
         p0 = np.where(self.owner==False)[0]
         p1 = np.where(self.owner==True)[0]
@@ -137,9 +125,7 @@ class EnergyGame(Game):
         l = set()
 
         # M_(G^gamma)
-        max_cycle_cost = 0
-        for v in self.edges:
-            max_cycle_cost += np.max((0,np.max(-(v[v!=mini]))))
+        max_cycle_cost = -np.sum(np.min(np.clip(self.edges, mini, 0)*(self.edges!=mini), 1))
 
         def minus(a,b):
             if (a!=-1 and ((aminb:=(a-b))<=max_cycle_cost)):
@@ -205,41 +191,29 @@ class EnergyGame(Game):
 
         return f
 
-    def solve_value_iter(self):
+    def solve_value_kleene(self):
 
         mini = np.iinfo(self.edges.dtype).min
         maxi = np.iinfo(self.edges.dtype).max
 
         # M_(G^gamma)
-        max_cycle_cost = 0
-        for v in self.edges:
-            max_cycle_cost += np.max((0,np.max(-(v[v!=mini]))))
+        max_cycle_cost = -np.sum(np.min(np.clip(self.edges, mini, 0)*(self.edges!=mini), 1))
 
-        def minus(a,b):
-            if b==mini:
-                return 0
-            if (a!=-1 and ((aminb:=(a-b))<=max_cycle_cost)):
-                return max(0,aminb)
-            else:
-                return -1
-
-        vminus = np.vectorize(minus)
-
-        f = np.zeros(len(self.owner),dtype=int).reshape((-1,1))
+        f = np.zeros(len(self.owner),dtype=int)
 
         while True:
 
             old = np.array(f)
 
-            edges_weight = vminus(f, self.edges)
+            edges = f-self.edges
 
-            edges_weight =  np.where(self.owner.reshape(-1,1), np.where(self.edges!=mini, edges_weight, mini), np.where(self.edges!=mini, edges_weight, maxi))
+            edges_weight = np.where((f!=-1)&(edges<=max_cycle_cost), np.clip(edges, 0, maxi), maxi)
 
-            edges_weight = np.where(edges_weight==-1, maxi, edges_weight)
+            edges_weight = np.where(self.owner.reshape(-1,1), np.where(self.edges!=mini, edges_weight, mini), np.where(self.edges!=mini, edges_weight, maxi))
 
-            f = np.where(self.owner, np.max(edges_weight, 1), np.min(edges_weight, 1))
+            edges_weight = np.where(self.owner, np.max(edges_weight, 1), np.min(edges_weight, 1))
 
-            f = np.where(f==maxi, -1, f)
+            f = np.where(edges_weight==maxi, -1, edges_weight)
 
             if np.all(f==old):
                 break
@@ -253,11 +227,6 @@ class EnergyGame(Game):
 
         mini = np.iinfo(self.edges.dtype).min
         maxi = np.iinfo(self.edges.dtype).max
-
-        # M_(G^gamma)
-        max_cycle_cost = 0
-        for v in self.edges:
-            max_cycle_cost += np.max((0,np.max(-(v[v!=mini]))))
 
         nW = len(self.owner)*np.max(np.abs(self.edges[np.where(self.edges!=mini)]))
 
@@ -318,14 +287,9 @@ class EnergyGame(Game):
 
         full[np.setdiff1d(np.arange(self.edges.shape[0]), p1[cycle_nodes])]=f
 
-        # print(p1)
-        # print(cycle_nodes)
-        # print(neg_strat)
-
         return_strat = np.full(len(self.edges), -1)
         if len(cycle_nodes)!=0:
             return_strat[p1[cycle_nodes]]=neg_strat
-        # print("++",return_strat)
 
         return_strat[np.setdiff1d(np.arange(len(self.edges)), p1[cycle_nodes])] = strat[:-1]
 
@@ -340,9 +304,7 @@ class EnergyGame(Game):
         maxi = np.iinfo(self.edges.dtype).max
 
         # M_(G^gamma)
-        max_cycle_cost = 0
-        for v in self.edges:
-            max_cycle_cost += np.max((0,np.max(-(v[v!=mini]))))
+        max_cycle_cost = -np.sum(np.min(np.clip(self.edges, mini, 0)*(self.edges!=mini), 1))
 
         nW = len(self.owner)*np.max(np.abs(self.edges[np.where(self.edges!=mini)]))
 
@@ -430,8 +392,6 @@ class EnergyGame(Game):
                     if np.all(v_==v_h):
                         break
 
-                ########
-
                 if not np.any(v_):
 
                     full = np.full(self.edges.shape[0], -1, dtype=np.int32)
@@ -443,20 +403,11 @@ class EnergyGame(Game):
                     return_strat = np.full(len(self.edges), -1)
                     if len(cycle_nodes)!=0:
                         return_strat[p1[cycle_nodes]]=neg_strat
-                    # print("++",return_strat)
 
                     return_strat[np.setdiff1d(np.arange(len(self.edges)), p1[cycle_nodes])] = strat[:-1]
                     return full, return_strat
                 else:
                     v[v_]-=1
-
-    def solve_strat_bcdgr(self):
-
-        mini = np.iinfo(self.edges.dtype).min
-
-        z = self.solve_bcdgr()
-
-        Game.printm(np.where(self.edges!=mini, z.reshape(-1,1)+self.edges, mini))
 
     def solve(self, strat=None):
 

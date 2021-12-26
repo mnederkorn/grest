@@ -68,14 +68,13 @@ class DiscountedPayoffGame(Game):
             
         return SimpleStochasticGame(owner, ssg_edges, avg_chance, True)
 
-    def solve_value_iter_matrix(self):
+    def solve_value_kleene(self):
 
         mini = np.iinfo(self.edges.dtype).min
 
         cur = np.zeros(len(self.owner)).reshape((-1,1))
 
         while True:
-
             old = np.array(cur)
 
             edges_weight = np.where(self.edges != mini, ((1-self.discount)*self.edges)+self.discount*cur, np.nan)
@@ -89,39 +88,20 @@ class DiscountedPayoffGame(Game):
             # iterate until max float precision is hit
             if max_err <1e-14:
                 break
-
         return cur
 
-    def solve_value_iter_lin(self):
-
-        self.discount=float(self.discount)
-
-        mini = np.iinfo(self.edges.dtype).min
-
-        cur = [0 for _ in range(len(self.owner))]
-
-        while True:
-
-            old = copy.copy(cur)
-
-            edges_weight = [[self.discount*cur[j]+(1-self.discount)*jth for j,jth in enumerate(ith) if jth != mini] for ith in self.edges]
-
-            cur = [min(ith) if owner else max(ith) for ith,owner in zip(edges_weight,self.owner)]
-
-            max_err = max([abs(i-j) for i,j in zip(old,cur)])
-            if max_err <1e-14:
-                break
-
-        return cur
-
-    def solve_strat_iter(self):
+    def solve_strat_iter(self, player):
 
         p0 = np.where(self.owner==False)[0]
         p1 = np.where(self.owner==True)[0]
 
         mini = np.iinfo(self.edges.dtype).min
+        maxi = np.iinfo(self.edges.dtype).max
 
-        strat = np.where(self.owner, -1, np.apply_along_axis(lambda x: np.random.choice(np.where(x!=mini)[0]), 1, self.edges))
+        if not player:
+            strat = np.where(self.owner, -1, np.apply_along_axis(lambda x: np.random.choice(np.where(x!=mini)[0]), 1, self.edges))
+        else:
+            strat = np.where(self.owner, np.apply_along_axis(lambda x: np.random.choice(np.where(x!=mini)[0]), 1, self.edges), -1)
 
         strat_hist = []
 
@@ -136,24 +116,38 @@ class DiscountedPayoffGame(Game):
 
             v = [solver.NumVar(float(-W), float(W), str(x)) for x in range(len(self.owner))]
 
-            for s,p in enumerate(self.owner):
-                if not p:
-                    solver.Add(v[s] == (1-float(self.discount))*float(self.edges[s,strat[s]])+float(self.discount)*v[strat[s]])
-                else:
-                    for t in np.where(self.edges[s]!=mini)[0]:
-                        solver.Add(v[s] <= (1-float(self.discount))*float(self.edges[s,t])+float(self.discount)*v[t])
+            if not player:
+                for s,p in enumerate(self.owner):
+                    if not p:
+                        solver.Add(v[s] == (1-float(self.discount))*float(self.edges[s,strat[s]])+float(self.discount)*v[strat[s]])
+                    else:
+                        for t in np.where(self.edges[s]!=mini)[0]:
+                            solver.Add(v[s] <= (1-float(self.discount))*float(self.edges[s,t])+float(self.discount)*v[t])
+            else:
+                for s,p in enumerate(self.owner):
+                    if p:
+                        solver.Add(v[s] == (1-float(self.discount))*float(self.edges[s,strat[s]])+float(self.discount)*v[strat[s]])
+                    else:
+                        for t in np.where(self.edges[s]!=mini)[0]:
+                            solver.Add(v[s] >= (1-float(self.discount))*float(self.edges[s,t])+float(self.discount)*v[t])
 
             obj_func = v[0]
 
             for v_n in v[1:]:
                 obj_func+=v_n
 
-            solver.Maximize(obj_func)
+            if not player:
+                solver.Maximize(obj_func)
+            else:
+                solver.Minimize(obj_func)
 
             status = solver.Solve()
 
-            strat = np.where(self.owner, strat, np.argmax(((1-self.discount)*self.edges)+(self.discount*(np.array([v_n.solution_value() for v_n in v]))), 1))
-            
+            if not player:
+                strat = np.where(self.owner, strat, np.argmax(((1-self.discount)*self.edges)+(self.discount*(np.array([v_n.solution_value() for v_n in v]))), 1))
+            else:
+                strat = np.where(self.owner, np.argmin(((1-self.discount)*np.where(self.edges==mini,maxi,self.edges))+(self.discount*(np.array([v_n.solution_value() for v_n in v]))), 1), strat)
+
         return np.array([v_n.solution_value() for v_n in v]),strat
 
     def solve(self, strat=None):

@@ -28,11 +28,11 @@ class SimpleStochasticGame(Game):
         avg_chance = np.random.random(size=(avg_n,n+2))
         avg_chance = np.where(edges[np.where(owner==2)], avg_chance, 0)
 
-        avg_chance = (avg_chance.transpose()/np.sum(avg_chance,1)).transpose()
+        asdf = avg_chance/np.sum(avg_chance,1).reshape(-1,1)
 
         return cls(owner, edges, avg_chance, False)
 
-    def solve_value_iter(self):
+    def solve_value_kleene(self):
 
         cur = np.hstack((np.zeros(len(self.owner)), [0], [1]))
 
@@ -57,7 +57,7 @@ class SimpleStochasticGame(Game):
 
         return cur
 
-    def solve_strat_iter(self):
+    def solve_strat_iter(self,player):
 
         assert self.stopping, "SSG needs to be stopping to be solved with strategy iteration. To ensure SSG is stopping, generate DPG and convert to SSG via DiscountedPayoffGame.to_ssg."
 
@@ -65,16 +65,10 @@ class SimpleStochasticGame(Game):
         p1 = np.where(self.owner==1)[0]
         p2 = np.where(self.owner==2)[0]
 
-        if len(p0) != 0:
-            rnd_strat = np.apply_along_axis(lambda x: np.random.choice(np.where(x)[0]), 1, self.edges[p0])
+        if not player:
+            strat = np.where(self.owner==0, np.apply_along_axis(lambda x: np.random.choice(np.where(x)[0]), 1, self.edges), -1)
         else:
-            rnd_strat = np.array([])
-
-        rnd_strat = np.vstack((p0,rnd_strat))
-
-        rnd_strat = np.transpose(rnd_strat)
-
-        strat = rnd_strat
+            strat = np.where(self.owner==1, np.apply_along_axis(lambda x: np.random.choice(np.where(x)[0]), 1, self.edges), -1)
 
         strat_hist = []
 
@@ -86,36 +80,40 @@ class SimpleStochasticGame(Game):
 
             v = [solver.NumVar(float(0), float(1), str(x)) for x in range(len(self.owner))]+[solver.NumVar(float(0), float(0), str(len(self.owner)+1))]+[solver.NumVar(float(1), float(1), str(len(self.owner)+2))]
 
-            for s,t in strat:
-                solver.Add(v[s] == v[t])
-
-            for s in p1:
-                for t in np.where(self.edges[s])[0]:
-                    solver.Add(v[s] <= v[t])
-
-            for i,s in enumerate(p2):
-                val = sum([v[val_n]*self.avg_chance[i,val_n] for val_n in np.where(self.edges[s])[0]])
-                solver.Add(v[s] == val)
+            for s,p in enumerate(self.owner):
+                if p==player:
+                    solver.Add(v[s] == v[strat[s]])
+                else:
+                    if p==0:
+                        for t in np.where(self.edges[s])[0]:
+                            solver.Add(v[s] >= v[t])
+                    elif p==1:
+                        for t in np.where(self.edges[s])[0]:
+                            solver.Add(v[s] <= v[t])
+                    else:
+                        val = 0
+                        for t in np.where(self.edges[s])[0]:
+                            val += (v[t]*self.avg_chance[np.nonzero(s==p2)[0][0],t])
+                        solver.Add(v[s] == val)
 
             obj_func = v[0]
 
             for v_n in v[1:]:
                 obj_func+=v_n
 
-            solver.Maximize(obj_func)
+            if not player:
+                solver.Maximize(obj_func)
+            else:
+                solver.Minimize(obj_func)
 
             status = solver.Solve()
 
-            strat = np.empty(0, dtype=np.int64)
+            if not player:
+                strat = np.where(self.owner==0, np.argmax(np.where(self.edges, self.edges*np.array([v_n.solution_value() for v_n in v]), -1), 1), strat)
+            else:
+                strat = np.where(self.owner==1, np.argmin(np.where(self.edges, self.edges*np.array([v_n.solution_value() for v_n in v]), 2), 1), strat)
 
-            for s in p0:
-                idx = np.where(self.edges[s])[0]
-                new = np.argmax([v[t].solution_value() for t in idx])
-                strat = np.hstack((strat, idx[new]))
-
-            strat = np.transpose(np.vstack((p0,strat)))
-
-        return np.array([v_n.solution_value() for v_n in v])
+        return np.array([v_n.solution_value() for v_n in v]), strat
 
     def solve(self, strat=None):
 
@@ -139,9 +137,9 @@ class SimpleStochasticGame(Game):
         return ret
 
     # strats for avg/rng vertices as -1
-    def solve_strat_value_iter(self):
+    def solve_strat_kleene(self):
 
-        z = self.solve_value_iter()
+        z = self.solve_value_kleene()
 
         strats = np.where(self.owner==2, -1, np.where(self.owner==0, np.nanargmax(np.where(self.edges, z, np.nan), 1), np.nanargmin(np.where(self.edges, z, np.nan), 1)))
 

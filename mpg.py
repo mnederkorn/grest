@@ -32,7 +32,7 @@ class MeanPayoffGame(Game):
 
         return cls(owner, edges)
 
-    def solve_value_iter_matrix(self):
+    def solve_value_kleene(self):
 
         mini = np.iinfo(self.edges.dtype).min
 
@@ -50,34 +50,10 @@ class MeanPayoffGame(Game):
 
             # iterate until max float precision is hit
             if max_err <1e-4:
+                # strat = np.where(self.owner, np.nanargmin(edges_weight, 1), np.nanargmax(edges_weight, 1))
                 break
 
-        return cur
-
-    def solve_value_iter_lin(self):
-
-        mini = np.iinfo(self.edges.dtype).min
-
-        cur = [0 for _ in range(len(self.owner))]
-
-        for i in count(1):
-
-            old = copy.copy(cur)
-
-            # edges_weight = np.where(self.edges != mini, (self.edges/i)+cur*((i-1)/i), np.nan)
-
-            edges_weight = [[(((i-1)/i)*cur[j])+(jth/i) for j,jth in enumerate(ith) if jth != mini] for ith in self.edges]
-
-            # cur = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
-
-            cur = [min(ith) if owner else max(ith) for ith,owner in zip(edges_weight,self.owner)]
-
-            max_err = max([abs(i-j) for i,j in zip(old,cur)])
-
-            # iterate until max float precision is hit
-            if max_err < 1e-4:
-                break
-
+        # return cur, strat
         return cur
 
     def solve_zwick_paterson(self):
@@ -125,15 +101,16 @@ class MeanPayoffGame(Game):
         z = solver(self)
 
         ret = np.full(len(self.owner), -1, dtype=int)
+        edges = np.array(self.edges)
 
-        for i,v in enumerate(self.edges):
+        for i,v in enumerate(edges):
             w = np.where(v!=mini)[0]
             while True:
                 cl = ceil(len(w)/2)
                 one,two = w[:cl],w[cl:]
-                e = self.edges.copy()
+                e = edges.copy()
                 e[i]=mini
-                e[i,one]=self.edges[i,one]
+                e[i,one]=edges[i,one]
                 x = solver(MeanPayoffGame(self.owner, e))
                 if np.all(x==z):
                     if len(one)==1:
@@ -143,9 +120,9 @@ class MeanPayoffGame(Game):
                         w = one
                 else:
                     w = two
-            tmp = self.edges[i,ret[i]]
-            self.edges[i]=mini
-            self.edges[i,ret[i]]=tmp
+            tmp = edges[i,ret[i]]
+            edges[i]=mini
+            edges[i,ret[i]]=tmp
         return ret
 
     def solve(self, strat=None):
