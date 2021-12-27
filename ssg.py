@@ -57,7 +57,7 @@ class SimpleStochasticGame(Game):
 
         return cur
 
-    def solve_strat_iter(self,player):
+    def solve_both_strat_iter(self, player):
 
         assert self.stopping, "SSG needs to be stopping to be solved with strategy iteration. To ensure SSG is stopping, generate DPG and convert to SSG via DiscountedPayoffGame.to_ssg."
 
@@ -119,22 +119,16 @@ class SimpleStochasticGame(Game):
 
         if type(strat) != type(None):
 
-            old = np.array(self.edges)
-
-            self.edges = np.where(strat!=-1, 0, self.edges.transpose()).transpose()
+            edges = (strat==-1).reshape(-1,1)*self.edges
 
             for i in np.where(strat!=-1)[0]:
-                self.edges[i,strat[i]]=old[i,strat[i]]
+                edges[i,strat[i]]=True
 
-            ret = self.solve_value_iter()
-
-            self.edges = old
+            return self.solve_value_kleene()
 
         else:
 
-            ret = self.solve_value_iter()
-
-        return ret
+            return self.solve_value_kleene()
 
     # strats for avg/rng vertices as -1
     def solve_strat_kleene(self):

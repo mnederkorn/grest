@@ -81,8 +81,6 @@ class DiscountedPayoffGame(Game):
 
             cur = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
 
-            # print(edges_weight)
-
             max_err = np.amax(np.abs(cur-old))
 
             # iterate until max float precision is hit
@@ -90,7 +88,7 @@ class DiscountedPayoffGame(Game):
                 break
         return cur
 
-    def solve_strat_iter(self, player):
+    def solve_both_strat_iter(self, player):
 
         p0 = np.where(self.owner==False)[0]
         p1 = np.where(self.owner==True)[0]
@@ -156,28 +154,22 @@ class DiscountedPayoffGame(Game):
 
             mini = np.iinfo(self.edges.dtype).min
 
-            old = np.array(self.edges)
-
-            self.edges = np.where(strat!=-1, mini, self.edges.transpose()).transpose()
+            edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
 
             for i in np.where(strat!=-1)[0]:
-                self.edges[i,strat[i]]=old[i,strat[i]]
+                edges[i,strat[i]]=self.edges[i,strat[i]]
 
-            ret = self.solve_value_iter_matrix()
-
-            self.edges = old
+            return DiscountedPayoffGame(self.owner, edges, self.discount).solve_value_kleene()
 
         else:
 
-            ret = self.solve_value_iter_matrix()
+            return self.solve_value_kleene()
 
-        return ret
-
-    def solve_strat_value_iter_matrix(self):
+    def solve_strat_kleene(self):
 
         mini = np.iinfo(self.edges.dtype).min
 
-        z = self.solve_value_iter_matrix()
+        z = self.solve_value_kleene()
 
         return np.argmin(np.where(self.edges!=mini, np.abs(((self.discount*z)+((1-self.discount)*self.edges))-z.reshape(-1,1)), 1000),1)
 

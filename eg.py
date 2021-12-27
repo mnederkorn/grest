@@ -6,6 +6,7 @@ from numba import jit
 from ortools.linear_solver import pywraplp
 from itertools import count
 import copy
+from math import ceil
 
 # BellmanFord
 def find_negative_cycle_nodes(edges):
@@ -58,9 +59,9 @@ def find_negative_cycle_nodes(edges):
     ret = np.array(list(cycle_nodes_t))
 
     if len(ret)!=0:
-        return ret, pred[ret]
+        return pred[ret], ret
     else:
-        return ret, np.array([],dtype=np.int64)
+        return np.array([],dtype=np.int64), ret
 
 # BellmanFord finds (at least) one negative cycle but not necessarily all so we need to iterate
 def find_all_negative_cycle_nodes(edges):
@@ -77,16 +78,22 @@ def find_all_negative_cycle_nodes(edges):
         if len(ret)==0:
             break
         else:
-            neg_strat[restriction[ret]] = ret_strat
+            neg_strat[restriction[ret]] = restriction[ret_strat]
             cycle_nodes=np.hstack((cycle_nodes,restriction[ret]))
+
+
 
     if len(cycle_nodes)!=0:
         while True:
             old=len(cycle_nodes)
 
-            cycle_nodes=np.union1d(cycle_nodes,np.nonzero(np.any(edges[:,cycle_nodes]!=mini, axis=1)))
+            adds = np.any(edges[:,cycle_nodes]!=mini, axis=1)
+            adds[cycle_nodes]=False
 
-            neg_strat[np.any(edges[:,cycle_nodes]!=mini, axis=1)]=np.where(neg_strat==-1, np.argmax(edges[:,cycle_nodes], 1), neg_strat)[np.any(edges[:,cycle_nodes]!=mini, axis=1)]
+            neg_strat[adds] = cycle_nodes[np.argmax(edges[np.ix_(adds,cycle_nodes)], 1)]
+
+            cycle_nodes=np.union1d(cycle_nodes,np.nonzero(adds))
+
             if len(cycle_nodes)==old:
                 break
 
@@ -219,8 +226,39 @@ class EnergyGame(Game):
                 break
 
         return f
+
+    def solve_strat_kleene(self):
+
+        mini = np.iinfo(self.edges.dtype).min
+
+        z = self.solve_value_kleene()
+
+        ret = np.full(len(self.owner), -1, dtype=int)
+        edges = np.array(self.edges)
+
+        for i,v in enumerate(edges):
+            w = np.where(v!=mini)[0]
+            while True:
+                cl = ceil(len(w)/2)
+                one,two = w[:cl],w[cl:]
+                e = edges.copy()
+                e[i]=mini
+                e[i,one]=edges[i,one]
+                x = EnergyGame(self.owner, e).solve_value_kleene()
+                if np.all(x==z):
+                    if len(one)==1:
+                        ret[i]=one[0]
+                        break
+                    else:
+                        w = one
+                else:
+                    w = two
+            tmp = edges[i,ret[i]]
+            edges[i]=mini
+            edges[i,ret[i]]=tmp
+        return ret
     
-    def solve_strat_iter_below(self):
+    def solve_both_strat_iter_below(self):
 
         p0 = np.where(self.owner==False)[0]
         p1 = np.where(self.owner==True)[0]
@@ -244,7 +282,7 @@ class EnergyGame(Game):
         edges[:-1,-1]=np.where(self.owner, edges[:-1,-1], -2*nW)
 
         # V' & E'
-        restriction=np.setdiff1d(np.arange(edges.shape[0]),p1[cycle_nodes])
+        restriction=np.setdiff1d(np.arange(len(edges)),p1[cycle_nodes])
         owner = owner[restriction]
         edges = edges[np.ix_(restriction,restriction)]
 
@@ -258,9 +296,7 @@ class EnergyGame(Game):
 
             strat_hist.append(hash(strat.tobytes()))
 
-            f = np.zeros(owner.shape[0],dtype=np.int32)
-
-            oldest = np.array(f)
+            f = np.zeros(len(owner),dtype=int)
 
             while True:
 
@@ -288,14 +324,15 @@ class EnergyGame(Game):
         full[np.setdiff1d(np.arange(self.edges.shape[0]), p1[cycle_nodes])]=f
 
         return_strat = np.full(len(self.edges), -1)
-        if len(cycle_nodes)!=0:
-            return_strat[p1[cycle_nodes]]=neg_strat
 
-        return_strat[np.setdiff1d(np.arange(len(self.edges)), p1[cycle_nodes])] = strat[:-1]
+        if len(cycle_nodes)!=0:
+            return_strat[p1[cycle_nodes]]=p1[neg_strat]
+
+        return_strat[np.setdiff1d(np.arange(len(self.edges)), p1[cycle_nodes])] = np.where(strat[:-1]!=-1, restriction[strat[:-1]], -1)
 
         return full, return_strat
 
-    def solve_strat_iter_above(self):
+    def solve_both_strat_iter_above(self):
 
         p0 = np.where(self.owner==False)[0]
         p1 = np.where(self.owner==True)[0]
@@ -311,6 +348,7 @@ class EnergyGame(Game):
         edges_p1 = self.edges[np.ix_(p1,p1)]
 
         cycle_nodes, neg_strat = find_all_negative_cycle_nodes(edges_p1)
+
 
         # p1[cycle_nodes] 
         # is the indices of the vertices in V_1 that can reach negative cycles in total control of player 1 (in self.edges indices reference)
@@ -402,9 +440,12 @@ class EnergyGame(Game):
 
                     return_strat = np.full(len(self.edges), -1)
                     if len(cycle_nodes)!=0:
-                        return_strat[p1[cycle_nodes]]=neg_strat
+                        return_strat[p1[cycle_nodes]]=p1[neg_strat]
 
-                    return_strat[np.setdiff1d(np.arange(len(self.edges)), p1[cycle_nodes])] = strat[:-1]
+                    return_strat[np.setdiff1d(np.arange(len(self.edges)), p1[cycle_nodes])] = np.where(strat[:-1]!=-1, restriction[strat[:-1]], -1)
+
+                    return_strat = np.where(return_strat==len(self.owner), np.apply_along_axis(lambda v: np.random.choice(np.where(v!=mini)[0]), 1, self.edges), return_strat)
+
                     return full, return_strat
                 else:
                     v[v_]-=1
@@ -415,22 +456,16 @@ class EnergyGame(Game):
 
             mini = np.iinfo(self.edges.dtype).min
 
-            old = np.array(self.edges)
-
-            self.edges = np.where(strat!=-1, mini, self.edges.transpose()).transpose()
+            edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
 
             for i in np.where(strat!=-1)[0]:
-                self.edges[i,strat[i]]=old[i,strat[i]]
+                edges[i,strat[i]]=self.edges[i,strat[i]]
 
-            ret = self.solve_bcdgr()
-
-            self.edges = old
+            return EnergyGame(self.owner, edges).solve_value_bcdgr()
 
         else:
 
-            ret = self.solve_bcdgr()
-
-        return ret
+            return self.solve_value_bcdgr()
 
     def visualise(self, target_path=None, strat=None, values=None, restr_values=None):
 

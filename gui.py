@@ -254,7 +254,7 @@ class Gui:
             nodes_lab = Label(top, text="Nodes #, excl. sinks")
         nodes_n = Spinbox(top, from_=1, to=100)
         nodes_n.delete(0, 1)
-        nodes_n.insert(0, 4)
+        nodes_n.insert(0, 8)
         out_lab = Label(top, text="Avg. outgoing Edges per Node", anchor="w")
         avg_out = Spinbox(top, from_=1, to=10, increment=0.05)
         avg_out.delete(0, 4)

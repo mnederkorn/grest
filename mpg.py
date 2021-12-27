@@ -32,7 +32,7 @@ class MeanPayoffGame(Game):
 
         return cls(owner, edges)
 
-    def solve_value_kleene(self):
+    def _solve_value_kleene(self):
 
         mini = np.iinfo(self.edges.dtype).min
 
@@ -56,7 +56,7 @@ class MeanPayoffGame(Game):
         # return cur, strat
         return cur
 
-    def solve_zwick_paterson(self):
+    def solve_value_zwick_paterson(self):
 
         mini = np.iinfo(self.edges.dtype).min
 
@@ -94,11 +94,11 @@ class MeanPayoffGame(Game):
 
         return v
 
-    def solve_strat(self, solver):
+    def solve_strat_zwick_paterson(self):
 
         mini = np.iinfo(self.edges.dtype).min
 
-        z = solver(self)
+        z = self.solve_value_zwick_paterson()
 
         ret = np.full(len(self.owner), -1, dtype=int)
         edges = np.array(self.edges)
@@ -111,7 +111,7 @@ class MeanPayoffGame(Game):
                 e = edges.copy()
                 e[i]=mini
                 e[i,one]=edges[i,one]
-                x = solver(MeanPayoffGame(self.owner, e))
+                x = MeanPayoffGame(self.owner, e).solve_value_zwick_paterson()
                 if np.all(x==z):
                     if len(one)==1:
                         ret[i]=one[0]
@@ -131,22 +131,16 @@ class MeanPayoffGame(Game):
 
             mini = np.iinfo(self.edges.dtype).min
 
-            old = np.array(self.edges)
-
-            self.edges = np.where(strat!=-1, mini, self.edges.transpose()).transpose()
+            edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
 
             for i in np.where(strat!=-1)[0]:
-                self.edges[i,strat[i]]=old[i,strat[i]]
+                edges[i,strat[i]]=self.edges[i,strat[i]]
 
-            ret = self.solve_zwick_paterson()
-
-            self.edges = old
+            return MeanPayoffGame(self.owner, edges).solve_value_zwick_paterson()
 
         else:
 
-            ret = self.solve_zwick_paterson()
-
-        return ret
+            return self.solve_value_zwick_paterson()
 
     def to_dpg(self):
 

@@ -13,7 +13,7 @@ from func_timeout import func_timeout, FunctionTimedOut
 
 if __name__ == '__main__':
 
-    n = int(16)
+    n = int(8)
 
     p = 2/n
 
@@ -23,7 +23,7 @@ if __name__ == '__main__':
     # pg = ParityGame.generate(n, p, w)
 
     # mpg demo
-    # dpg = DiscountedPayoffGame.generate(n, p, w)
+    # mpg = MeanPayoffGame.generate(n, p, w)
 
     # eg demo
     # eg = EnergyGame.generate(n, p, w)

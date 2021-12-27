@@ -35,7 +35,7 @@ def find_attractor(player, owner, edges, Nh):
 def zielonka(owner, edges, priority):
 
     if owner.size == 0:
-        return np.array([], dtype=np.int64),np.array([], dtype=np.int64)
+        return np.array([], dtype=np.int64), np.array([], dtype=np.int64)
     else:
         m = np.max(priority)
         player = m%2
@@ -50,25 +50,6 @@ def zielonka(owner, edges, priority):
             B_inv = np.setdiff1d(np.arange(owner.shape[0]), B)
             even2, odd2 = zielonka(owner[B_inv], edges[np.ix_(B_inv,B_inv)], priority[B_inv])
             return (np.union1d(B_inv[even2],B),B_inv[odd2]) if player else (B_inv[even2],np.union1d(B_inv[odd2],B))
-
-def zielonka2(owner, edges, priority, player, h, restr):
-
-    if len(owner)==0:
-        return np.array([], dtype=int)
-    else:
-        N_h = np.where(priority==h)[0]
-        N_h_a = find_attractor(player, owner, edges, N_h)
-        H = np.setdiff1d(np.arange(len(owner)), N_h_a)
-        W_0 = zielonka2(owner[H], edges[np.ix_(H,H)], priority[H], 1-player, h-1, H)
-        W_0 = H[W_0]
-        W_0_a = find_attractor(1-player, owner, edges, W_0)
-        G = np.setdiff1d(np.arange(len(owner)), W_0_a)
-        if len(W_0)==0:
-            return G
-        else:
-            win_G = zielonka2(owner[G], edges[np.ix_(G,G)], priority[G], player, h, G)
-            return G[win_G]
-
 
 class ParityGame(Game):
 
@@ -92,18 +73,18 @@ class ParityGame(Game):
 
         return cls(owner, edges, priority)
 
-    def solve_zielonka(self):
+    def solve_value_zielonka(self):
 
         z = zielonka(self.owner, self.edges, self.priority)
 
-        ret = np.full(self.owner.shape[0], False)
+        ret = np.zeros(len(self.owner), dtype=bool)
         ret[z[1]] = True
 
         return ret
 
-    def solve_strat(self, solver):
+    def solve_strat_zielonka(self):
 
-        z = solver(self)
+        z = self.solve_value_zielonka()
 
         ret = np.full(len(self.owner), -1, dtype=int)
 
@@ -115,7 +96,7 @@ class ParityGame(Game):
                 e = self.edges.copy()
                 e[i]=False
                 e[i,one]=True
-                x = solver(ParityGame(self.owner, e, self.priority))
+                x = ParityGame(self.owner, e, self.priority).solve_value_zielonka()
                 if np.all(x==z):
                     if len(one)==1:
                         ret[i]=one[0]
@@ -128,39 +109,20 @@ class ParityGame(Game):
             self.edges[i,ret[i]]=True
         return ret
 
-    def solve_zielonka2(self):
-
-        m=np.max(self.priority)
-
-        h = m+(m%2)
-
-        z = zielonka2(self.owner, self.edges, self.priority, 0, h, np.arange(len(self.owner), dtype=int))
-
-        ret = np.full(self.owner.shape[0], True)
-        ret[z] = False
-
-        return ret
-
     def solve(self, strat=None):
 
         if type(strat) != type(None):
 
-            old = np.array(self.edges)
-
-            self.edges = np.where(strat!=-1, 0, self.edges.transpose()).transpose()
+            edges = (strat==-1).reshape(-1,1)*self.edges
 
             for i in np.where(strat!=-1)[0]:
-                self.edges[i,strat[i]]=old[i,strat[i]]
+                edges[i,strat[i]]=True
 
-            ret = self.solve_zielonka()
-
-            self.edges = old
+            return ParityGame(self.owner, edges, self.priority).solve_value_zielonka()
 
         else:
 
-            ret = self.solve_zielonka()
-
-        return ret
+            return self.solve_value_zielonka()
 
     def to_mpg(self):
 
