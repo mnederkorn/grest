@@ -28,7 +28,7 @@ class SimpleStochasticGame(Game):
         avg_chance = np.random.random(size=(avg_n,n+2))
         avg_chance = np.where(edges[np.where(owner==2)], avg_chance, 0)
 
-        asdf = avg_chance/np.sum(avg_chance,1).reshape(-1,1)
+        avg_chance = avg_chance/np.sum(avg_chance,1).reshape(-1,1)
 
         return cls(owner, edges, avg_chance, False)
 
@@ -115,21 +115,6 @@ class SimpleStochasticGame(Game):
 
         return np.array([v_n.solution_value() for v_n in v]), strat
 
-    def solve(self, strat=None):
-
-        if type(strat) != type(None):
-
-            edges = (strat==-1).reshape(-1,1)*self.edges
-
-            for i in np.where(strat!=-1)[0]:
-                edges[i,strat[i]]=True
-
-            return self.solve_value_kleene()
-
-        else:
-
-            return self.solve_value_kleene()
-
     # strats for avg/rng vertices as -1
     def solve_strat_kleene(self):
 
@@ -139,10 +124,31 @@ class SimpleStochasticGame(Game):
 
         return strats
 
-    def visualise(self, target_path=None, strat=None, values=None, restr_values=None):
+    def solve_value(self, strat=None):
+
+        print(self)
+
+        if type(strat) != type(None):
+
+            edges = (strat==-1).reshape(-1,1)*self.edges
+
+            for i in np.where(strat!=-1)[0]:
+                edges[i,strat[i]]=True
+
+            return SimpleStochasticGame(self.owner, edges, self.avg_chance, self.stopping).solve_value_kleene()
+
+        else:
+
+            return self.solve_value_kleene()
+
+    def solve_strat(self):
+
+        return self.solve_strat_kleene()
+
+    def visualise(self, target_path=None, strat=None, values=None):
 
         if type(strat) == type(None):
-            strat = np.full(self.owner.shape[0],-1)
+            strat = np.full(len(self.owner),-1)
 
         if target_path == None:
             target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}")
@@ -150,14 +156,7 @@ class SimpleStochasticGame(Game):
         view = Digraph(format="png")
         view.attr(bgcolor="#f0f0f0")
         for i,owner in enumerate(self.owner):
-            if (type(values) == type(None)) and (type(restr_values) == type(None)):
-                label = f"<v<sub>{i}</sub>>"
-            elif (type(values) != type(None)) and (type(restr_values) == type(None)):
-                label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}>"
-            elif (type(values) == type(None)) and (type(restr_values) != type(None)):
-                label = f"<v<sub>|</sub>(v<sub>{i}</sub>)={float(restr_values[i]):.2f}>"
-            else:
-                label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}<br/>v<sub>|</sub>(v<sub>{i}</sub>)={float(restr_values[i]):.2f}>"
+            label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}>"
             view.node(f"{i}", label=label, shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
 
         view.node(str(len(self.owner)), label="0", shape=shape[2], fontcolor=colour[2][False], color=colour[2][False], peripheries="2")

@@ -43,16 +43,9 @@ class Gui:
         self.frame_bottom_left = Frame(self.frame_left)
 
         self.scale = 1.0
+        self.glob_opt = Button(master=self.frame_top_left, command=lambda: self._render(opt=True), text="Show optimal", state="disabled")
 
-        self.cur_mode = BooleanVar()
-        self.cur_mode.set(False)
-        self.cur_cb = Checkbutton(master=self.frame_top_left, command=self._render, text="Show restr. opt. value", variable=self.cur_mode, state="disabled")
-        self.glob_mode = BooleanVar()
-        self.glob_mode.set(False)
-        self.glob_cb = Checkbutton(master=self.frame_top_left, command=self._render, text="Show opt. value", variable=self.glob_mode, state="disabled")
-
-        self.cur_cb.pack(side=TOP, fill=X, expand=False)
-        self.glob_cb.pack(side=LEFT, fill=X, expand=False)
+        self.glob_opt.pack(side=TOP, fill=X, expand=False)
 
         self.scroll_canvas = Canvas(master=self.frame_bottom_left)
         self.frame = Frame(master=self.scroll_canvas)
@@ -76,8 +69,7 @@ class Gui:
         self.canvas.bind("<ButtonPress-1>", self.scroll_start)
         self.canvas.bind("<B1-Motion>", self.scroll_move)
         self.canvas.bind("<MouseWheel>",self.zoom)
-        self.top.bind_all("<Key-1>", lambda _: [self.cur_cb.toggle() if self.cur_cb['state']=="normal" else None, self._render()])
-        self.top.bind_all("<Key-2>", lambda _: [self.glob_cb.toggle() if self.glob_cb['state']=="normal" else None, self._render()])
+        self.top.bind_all("<Key-1>", lambda _: self._render(opt=True) if self.glob_opt['state']=="normal" else None)
         self.top.bind_all("<Control-Key-1>", lambda _: self.gen_prompt(ParityGame))
         self.top.bind_all("<Control-Key-2>", lambda _: self.gen_prompt(MeanPayoffGame))
         self.top.bind_all("<Control-Key-3>", lambda _: self.gen_prompt(DiscountedPayoffGame))
@@ -120,25 +112,36 @@ class Gui:
 
         return strat
 
-    def _render(self, restr_values=None):
+    def _render(self, restr_values=None, opt=False):
 
         if hasattr(self, "game"):
 
-            strat = self.get_strat()
-
-            if self.glob_mode.get():
+            if opt:
                 if not hasattr(self, "values"):
-                    self.values = self.game.solve()
-                values=self.values
-            else:
-                values=None
+                    self.strat = self.game.solve_strat()
+                    self.values = self.game.solve_value()
 
-            if self.cur_mode.get():
-                restr_values = self.game.solve(strat=strat)
-            else:
-                restr_values = None
+                for i,s in enumerate(self.sources_0):
+                    self.tgt_sb_0[i].config(state="normal")
+                    self.tgt_sb_0[i].delete(0, END)
+                    self.tgt_sb_0[i].insert(0, f"{self.strat[s]}")
+                    self.tgt_sb_0[i].config(state="readonly")
 
-            im = self.game.visualise(strat=strat, values=values, restr_values=restr_values)
+                for i,s in enumerate(self.sources_1):
+                    self.tgt_sb_1[i].config(state="normal")
+                    self.tgt_sb_1[i].delete(0, END)
+                    self.tgt_sb_1[i].insert(0, f"{self.strat[s]}")
+                    self.tgt_sb_1[i].config(state="readonly")
+
+                values = self.values
+                strat = self.strat
+                self.glob_opt.config(state="disabled")
+            else:
+                strat = self.get_strat()
+                values = self.game.solve_value(strat=strat)
+                self.glob_opt.config(state="normal")
+
+            im = self.game.visualise(strat=strat, values=values)
 
             self.img = Image.open(im)
 
@@ -172,8 +175,8 @@ class Gui:
 
                 src_lab_0 = [Label(self.frame, text=f"{src} ↦") for src in self.sources_0]
                 src_lab_1 = [Label(self.frame, text=f"{src} ↦") for src in self.sources_1]
-                self.tgt_sb_0 = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt!=mini), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_0]
-                self.tgt_sb_1 = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt!=mini), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_1]
+                self.tgt_sb_0 = [Spinbox(self.frame, values=tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt!=mini), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_0]
+                self.tgt_sb_1 = [Spinbox(self.frame, values=tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt!=mini), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_1]
 
             elif self.game.__class__ in [ParityGame, SimpleStochasticGame]:
 
@@ -182,8 +185,8 @@ class Gui:
 
                 src_lab_0 = [Label(self.frame, text=f"{src} ↦") for src in self.sources_0]
                 src_lab_1 = [Label(self.frame, text=f"{src} ↦") for src in self.sources_1]
-                self.tgt_sb_0 = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_0]
-                self.tgt_sb_1 = [Spinbox(self.frame, values=("",)+tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_1]
+                self.tgt_sb_0 = [Spinbox(self.frame, values=tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_0]
+                self.tgt_sb_1 = [Spinbox(self.frame, values=tuple(i for i,tgt in enumerate(self.game.edges[src]) if tgt), command=self._render, state="readonly", width=ceil(log10(self.game.owner.shape[0]))+1, wrap=True) for src in self.sources_1]
 
             if self.game.__class__ in [MeanPayoffGame, DiscountedPayoffGame, EnergyGame, SimpleStochasticGame]:
                 lab_0 = Label(self.frame, text="Max player strategy")
@@ -211,8 +214,7 @@ class Gui:
                 src.grid(row=(i+j),column=0, sticky="nw")
                 tgt.grid(row=(i+j),column=1, sticky="nw")
 
-            self.cur_cb.config(state="normal")
-            self.glob_cb.config(state="normal")
+            self.glob_opt.config(state="normal")
 
 
         self.frame.bind("<Configure>", lambda x: self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all")))
@@ -233,13 +235,13 @@ class Gui:
 
         if hasattr(self, "values"):
             del self.values
-        self.glob_mode.set(False)
-        self.cur_mode.set(False)
+        if hasattr(self, "strat"):
+            del self.strat
 
         if typ in [MeanPayoffGame, DiscountedPayoffGame, EnergyGame, ParityGame]:
             self.game = typ.generate(arg[0], p, arg[2])
         else:
-            self.game = typ.generate(arg[0], p)
+            self.game = DiscountedPayoffGame.generate(arg[0], p, 1).to_ssg()
 
         self.render()
 
@@ -291,6 +293,8 @@ class Gui:
         if file:
             if hasattr(self, "values"):
                 del self.values
+            if hasattr(self, "strats"):
+                del self.strats
             self.glob_mode.set(False)
             self.cur_mode.set(False)
             self.game = Game.load(file)

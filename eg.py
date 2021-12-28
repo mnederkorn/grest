@@ -450,7 +450,7 @@ class EnergyGame(Game):
                 else:
                     v[v_]-=1
 
-    def solve(self, strat=None):
+    def solve_value(self, strat=None):
 
         if type(strat) != type(None):
 
@@ -467,10 +467,14 @@ class EnergyGame(Game):
 
             return self.solve_value_bcdgr()
 
-    def visualise(self, target_path=None, strat=None, values=None, restr_values=None):
+    def solve_strat(self):
+
+        return self.solve_strat_kleene()
+
+    def visualise(self, target_path=None, strat=None, values=None):
 
         if type(strat) == type(None):
-            strat = np.full(self.owner.shape[0],-1)
+            strat = np.full(len(self.owner),-1)
 
         if target_path == None:
             target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}")
@@ -478,14 +482,7 @@ class EnergyGame(Game):
         view = Digraph(format="png")
         view.attr(bgcolor="#f0f0f0")
         for i,owner in enumerate(self.owner):
-            if (type(values) == type(None)) and (type(restr_values) == type(None)):
-                label = f"<v<sub>{i}</sub>>"
-            elif (type(values) != type(None)) and (type(restr_values) == type(None)):
-                label = f"<f(v<sub>{i}</sub>)={float(values[i]):.2f}>" if values[i] != -1 else f"<f(v<sub>{i}</sub>)=&infin;>"
-            elif (type(values) == type(None)) and (type(restr_values) != type(None)):
-                label = f"<f<sub>|</sub>(v<sub>{i}</sub>)={float(restr_values[i]):.2f}>" if restr_values[i] != -1 else f"<f<sub>|</sub>(v<sub>{i}</sub>)=&infin;>"
-            else:
-                label = f"<f(v<sub>{i}</sub>)={float(values[i]):.2f}<br/>" if values[i] != -1 else f"<f(v<sub>{i}</sub>)=&infin;<br/>"+f"f<sub>|</sub>(v<sub>{i}</sub>)={float(restr_values[i]):.2f}>" if restr_values[i] != -1 else f"f<sub>|</sub>(v<sub>{i}</sub>)=&infin;>"
+            label = f"<f(v<sub>{i}</sub>)={float(values[i]):.2f}>" if values[i] != -1 else f"<f(v<sub>{i}</sub>)=&infin;>"
             view.node(f"{i}", label=label, shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
         mini = np.iinfo(self.edges.dtype).min
         idx = np.where(self.edges!=mini)

@@ -87,13 +87,14 @@ class ParityGame(Game):
         z = self.solve_value_zielonka()
 
         ret = np.full(len(self.owner), -1, dtype=int)
+        edges = np.array(self.edges)
 
-        for i,v in enumerate(self.edges):
+        for i,v in enumerate(edges):
             w = np.where(v)[0]
             while True:
                 cl = ceil(len(w)/2)
                 one,two = w[:cl],w[cl:]
-                e = self.edges.copy()
+                e = edges.copy()
                 e[i]=False
                 e[i,one]=True
                 x = ParityGame(self.owner, e, self.priority).solve_value_zielonka()
@@ -105,11 +106,11 @@ class ParityGame(Game):
                         w = one
                 else:
                     w = two
-            self.edges[i]=np.zeros(len(self.owner), dtype=bool)
-            self.edges[i,ret[i]]=True
+            edges[i]=np.zeros(len(self.owner), dtype=bool)
+            edges[i,ret[i]]=True
         return ret
 
-    def solve(self, strat=None):
+    def solve_value(self, strat=None):
 
         if type(strat) != type(None):
 
@@ -124,6 +125,10 @@ class ParityGame(Game):
 
             return self.solve_value_zielonka()
 
+    def solve_strat(self):
+
+        return self.solve_strat_zielonka()
+
     def to_mpg(self):
 
         edges_exist = self.edges
@@ -134,10 +139,10 @@ class ParityGame(Game):
 
         return MeanPayoffGame(self.owner, edges)
 
-    def visualise(self, target_path=None, strat=None, values=None, restr_values=None):
+    def visualise(self, target_path=None, strat=None, values=None):
 
         if type(strat) == type(None):
-            strat = np.full(self.owner.shape[0],-1)
+            strat = np.full(len(self.owner),-1)
 
         if target_path == None:
             target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}")
@@ -145,14 +150,7 @@ class ParityGame(Game):
         view = Digraph(format="png")
         view.attr(bgcolor="#f0f0f0", forcelabels="True")
         for i,(owner, priority) in enumerate(zip(self.owner, self.priority)):
-            if (type(values) == type(None)) and (type(restr_values) == type(None)):
-                label = f"<v<sub>{i}</sub>>"
-            elif (type(values) != type(None)) and (type(restr_values) == type(None)):
-                label = f"<v(v<sub>{i}</sub>)={e_o[values[i]]}>"
-            elif (type(values) == type(None)) and (type(restr_values) != type(None)):
-                label = f"<v<sub>|</sub>(v<sub>{i}</sub>)={e_o[restr_values[i]]}>"
-            else:
-                label = f"<v(v<sub>{i}</sub>)={e_o[values[i]]}<br/>v<sub>|</sub>(v<sub>{i}</sub>)={e_o[restr_values[i]]}>"
+            label = f"<v(v<sub>{i}</sub>)={e_o[values[i]]}>"
             view.node(f"{i}", label=label, xlabel=f"{priority}", shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
         idx = np.where(self.edges==True)
         for s,t in zip(idx[0],idx[1]):

@@ -50,7 +50,6 @@ class MeanPayoffGame(Game):
 
             # iterate until max float precision is hit
             if max_err <1e-4:
-                # strat = np.where(self.owner, np.nanargmin(edges_weight, 1), np.nanargmax(edges_weight, 1))
                 break
 
         # return cur, strat
@@ -60,37 +59,45 @@ class MeanPayoffGame(Game):
 
         mini = np.iinfo(self.edges.dtype).min
 
-        empty_as_zero = np.where(self.edges != mini, self.edges, 0)
+        W = np.max(np.abs(np.where(self.edges!=mini, self.edges, 0)))
 
-        W = max(abs(np.amin(empty_as_zero)),abs(np.amax(empty_as_zero)))
-
-        a = np.zeros(len(self.owner)).reshape((-1,1))
+        v = np.zeros(len(self.owner), dtype=np.int64)
 
         k = (4*(len(self.owner)**3)*W)
 
+        edges = self.edges.astype(np.int64)
+
+        mini2 = np.iinfo(edges.dtype).min
+        maxi2 = np.iinfo(edges.dtype).max
+
+        # this can collide at around 4*(n^3)*(W^2)>2*62 because maxi2-((k*W)+1) can be smaller than v_k and the valid/invalid checks for edges stop making sense; analgous for mini2
+        # for W = log_2(|V|) that's around |V|=160000
+        # for W = |V|^(1/2) that's around |V|=32768=2^15
+        # for W = |V| that's around |V|=4096=2^12
+
+        edges = np.where(self.owner.reshape(-1,1), np.where(edges!=mini, edges, maxi2-((k*W)+1)), np.where(edges!=mini, edges, mini2+((k*W)+1)))
+
         for x in range(k):
 
-            edges_weight = np.where(self.edges != mini, self.edges+a, np.nan)
+            edges_weight = edges+v
 
-            a = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
+            v = np.where(self.owner, np.min(edges_weight, 1), np.max(edges_weight, 1))
 
-        lower = (a/k)-(1/(2*len(self.owner)*(len(self.owner)-1)))
-        upper = (a/k)+(1/(2*len(self.owner)*(len(self.owner)-1)))
+        v = v/k
 
-        v = np.zeros((len(self.owner)),dtype=object)
+        lower = v-(1/(2*len(self.owner)*(len(self.owner)-1)))
+        upper = v+(1/(2*len(self.owner)*(len(self.owner)-1)))
+
+        v = np.zeros(len(self.owner), dtype=float)
 
         for v_n in range(len(self.owner)):
-            br=False
             for denominator in range(1,len(self.owner)+1):
-                if br: break
                 f=floor(lower[v_n]*denominator)
                 c=ceil(upper[v_n]*denominator)
-                for numerator in range(f,c+1):
-                    r=numerator/denominator
-                    if ((lower[v_n]<=r)&(r<=upper[v_n])):
-                        v[v_n]=r
-                        br = True
-                        break
+                num = np.arange(f,c+1)/denominator
+                if np.any((lower[v_n]<num)&(upper[v_n]>num)):
+                    v[v_n] = num[((lower[v_n]<num)&(upper[v_n]>num))][0]
+                    break
 
         return v
 
@@ -125,7 +132,7 @@ class MeanPayoffGame(Game):
             edges[i,ret[i]]=tmp
         return ret
 
-    def solve(self, strat=None):
+    def solve_value(self, strat=None):
 
         if type(strat) != type(None):
 
@@ -141,6 +148,10 @@ class MeanPayoffGame(Game):
         else:
 
             return self.solve_value_zwick_paterson()
+
+    def solve_strat(self):
+
+        return self.solve_strat_zwick_paterson()
 
     def to_dpg(self):
 
@@ -158,10 +169,10 @@ class MeanPayoffGame(Game):
 
         return EnergyGame(self.owner, self.edges)
 
-    def visualise(self, target_path=None, strat=None, values=None, restr_values=None):
+    def visualise(self, target_path=None, strat=None, values=None):
 
         if type(strat) == type(None):
-            strat = np.full(self.owner.shape[0],-1)
+            strat = np.full(len(self.owner),-1)
 
         if target_path == None:
             target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}")
@@ -169,14 +180,7 @@ class MeanPayoffGame(Game):
         view = Digraph(format="png")
         view.attr(bgcolor="#f0f0f0")
         for i,owner in enumerate(self.owner):
-            if (type(values) == type(None)) and (type(restr_values) == type(None)):
-                label = f"<v<sub>{i}</sub>>"
-            elif (type(values) != type(None)) and (type(restr_values) == type(None)):
-                label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}>"
-            elif (type(values) == type(None)) and (type(restr_values) != type(None)):
-                label = f"<v<sub>|</sub>(v<sub>{i}</sub>)={float(restr_values[i]):.2f}>"
-            else:
-                label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}<br/>v<sub>|</sub>(v<sub>{i}</sub>)={float(restr_values[i]):.2f}>"
+            label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}>"
             view.node(f"{i}", label=label, shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
         mini = np.iinfo(self.edges.dtype).min
         mini = np.iinfo(self.edges.dtype).min
