@@ -3,8 +3,23 @@ import numpy as np
 # from ortools.linear_solver import pywraplp
 from tempfile import gettempdir
 from graphviz import Digraph
+from numba import jit
 
-class SimpleStochasticGame(Game):
+@jit(nopython=True, cache=True)
+def numba_nanmin_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.nanmin(x[i])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_nanmax_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.nanmax(x[i])
+    return out
+
+class SimpleStochasticGame_n(Game):
 
     def __init__(self, owner, edges, avg_chance, stopping):
 
@@ -32,22 +47,29 @@ class SimpleStochasticGame(Game):
 
         return cls(owner, edges, avg_chance, False)
 
-    def solve_value_kleene(self):
+    def solve_value_kleene_wrap(self):
 
-        cur = np.hstack((np.zeros(len(self.owner)), [0], [1]))
+        return self.solve_value_kleene(self.owner, self.edges, self.avg_chance, self.stopping)
+
+    @staticmethod
+    @jit(nopython=True, cache=True)
+    def solve_value_kleene(owner, edges, avg_chance, stopping):
+
+        cur = np.hstack((np.zeros(len(owner)), np.array([0]), np.array([1])))
 
         while True:
 
-            old = np.array(cur)
+            old = cur.copy()
 
-            edges_weight = np.tile(cur, (len(self.owner),1))
-            edges_weight = np.where(self.edges, edges_weight, np.nan)
+            # edges_weight = np.tile(cur, (len(owner),1))
+            edges_weight = cur.repeat(len(owner)).reshape(-1,len(owner)).transpose()
+            edges_weight = np.where(edges, edges_weight, np.nan)
 
-            cur[:-2] = np.where(self.owner == 0, np.nanmax(edges_weight, 1), cur[:-2])
-            cur[:-2] = np.where(self.owner == 1, np.nanmin(edges_weight, 1), cur[:-2])
+            cur[:-2] = np.where(owner == 0, numba_nanmax_axis1(edges_weight), cur[:-2])
+            cur[:-2] = np.where(owner == 1, numba_nanmin_axis1(edges_weight), cur[:-2])
 
-            idx = np.where(self.owner == 2)
-            cur[idx]=np.sum(self.avg_chance*old, 1)
+            idx = np.where(owner == 2)
+            cur[idx]=np.sum(avg_chance*old, 1)
 
             max_err = np.amax(np.abs(cur-old))
 

@@ -8,6 +8,36 @@ from tempfile import gettempdir
 from itertools import count
 import time
 import copy
+from numba import jit
+
+@jit(nopython=True, cache=True)
+def numba_min_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.min(x[i])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_nanmin_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.nanmin(x[i])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_max_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.max(x[i])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_nanmax_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.nanmax(x[i])
+    return out
+
 
 class MeanPayoffGame(Game):
 
@@ -32,40 +62,23 @@ class MeanPayoffGame(Game):
 
         return cls(owner, edges)
 
-    def _solve_value_kleene(self):
+    def solve_value_zwick_paterson_wrap(self):
 
-        mini = np.iinfo(self.edges.dtype).min
+        return self.solve_value_zwick_paterson(self.owner, self.edges)
 
-        cur = np.zeros(len(self.owner)).reshape((-1,1))
+    @staticmethod
+    @jit(nopython=True, cache=True)
+    def solve_value_zwick_paterson(owner, edges):
 
-        for i in count(1):
+        mini = np.iinfo(edges.dtype).min
 
-            old = np.array(cur)
+        W = np.max(np.abs(np.where(edges!=mini, edges, 0)))
 
-            edges_weight = np.where(self.edges != mini, (self.edges/i)+cur*((i-1)/i), np.nan)
+        v = np.zeros(len(owner), dtype=np.int64)
 
-            cur = np.where(self.owner, np.nanmin(edges_weight, 1), np.nanmax(edges_weight, 1))
+        k = (4*(len(owner)**3)*W)
 
-            max_err = np.amax(np.abs(cur-old))
-
-            # iterate until max float precision is hit
-            if max_err <1e-4:
-                break
-
-        # return cur, strat
-        return cur
-
-    def solve_value_zwick_paterson(self):
-
-        mini = np.iinfo(self.edges.dtype).min
-
-        W = np.max(np.abs(np.where(self.edges!=mini, self.edges, 0)))
-
-        v = np.zeros(len(self.owner), dtype=np.int64)
-
-        k = (4*(len(self.owner)**3)*W)
-
-        edges = self.edges.astype(np.int64)
+        edges = edges.astype(np.int64)
 
         mini2 = np.iinfo(edges.dtype).min
         maxi2 = np.iinfo(edges.dtype).max
@@ -75,23 +88,33 @@ class MeanPayoffGame(Game):
         # for W = |V|^(1/2) that's around |V|=32768=2^15
         # for W = |V| that's around |V|=4096=2^12
 
-        edges = np.where(self.owner.reshape(-1,1), np.where(edges!=mini, edges, maxi2-((k*W)+1)), np.where(edges!=mini, edges, mini2+((k*W)+1)))
+        x=np.where(edges!=mini, edges, maxi2-((k*W)+1))
+        y=np.where(edges!=mini, edges, mini2+((k*W)+1))
 
-        for x in range(k):
+        # edges = np.where(owner, x, y)
+
+        edges = np.empty((len(owner),len(owner)), dtype=edges.dtype)
+        for n,(i,j,l) in enumerate(zip(owner, x, y)):
+            if i:
+                edges[n]=j
+            else:
+                edges[n]=l
+
+        for _ in np.arange(k):
 
             edges_weight = edges+v
 
-            v = np.where(self.owner, np.min(edges_weight, 1), np.max(edges_weight, 1))
+            v = np.where(owner, numba_min_axis1(edges_weight), numba_max_axis1(edges_weight))
 
         v = v/k
 
-        lower = v-(1/(2*len(self.owner)*(len(self.owner)-1)))
-        upper = v+(1/(2*len(self.owner)*(len(self.owner)-1)))
+        lower = v-(1/(2*len(owner)*(len(owner)-1)))
+        upper = v+(1/(2*len(owner)*(len(owner)-1)))
 
-        v = np.zeros(len(self.owner), dtype=float)
+        v = np.full(len(owner), 0, dtype=np.float64)
 
-        for v_n in range(len(self.owner)):
-            for denominator in range(1,len(self.owner)+1):
+        for v_n in range(len(owner)):
+            for denominator in range(1,len(owner)+1):
                 f=floor(lower[v_n]*denominator)
                 c=ceil(upper[v_n]*denominator)
                 num = np.arange(f,c+1)/denominator
@@ -180,7 +203,10 @@ class MeanPayoffGame(Game):
         view = Digraph(format="png")
         view.attr(bgcolor="#f0f0f0")
         for i,owner in enumerate(self.owner):
-            label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}>"
+            if type(values) != type(None):
+                label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}>"
+            else:
+                label = f"<v<sub>{i}</sub>>"
             view.node(f"{i}", label=label, shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
         mini = np.iinfo(self.edges.dtype).min
         mini = np.iinfo(self.edges.dtype).min

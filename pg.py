@@ -6,50 +6,66 @@ from graphviz import Digraph
 from math import ceil
 from itertools import count
 from time import sleep
+from numba import jit
 
 e_o = {0:"Even",1:"Odd"}
 
+@jit(nopython=True, cache=True)
+def numba_any_axis1(x):
+    """Numba compatible version of np.any(x, axis=1)."""
+    out = np.zeros(x.shape[0], dtype=np.bool8)
+    for i in range(x.shape[1]):
+        out = np.logical_or(out, x[:, i])
+    return out
+
+@jit(nopython=True, cache=True)
 def find_attractor(player, owner, edges, Nh):
 
-    if Nh.size==0:
-        return []
+    if len(Nh)==0:
+        return np.array([False])[:0]
 
-    us = np.where(owner==player)[0]
-    them = np.where(owner!=player)[0]
+    us = (owner==player)
+    them = (owner!=player)
     
-    atr = np.array(Nh)
-    hashh = hash(atr.tobytes())
+    atr = Nh.copy()
 
     while True:
-        old = hashh
-        us_add = np.any(edges[np.ix_(us,atr)], axis=1)
-        them_add = np.logical_not(np.any(edges[np.ix_(them,np.setdiff1d(np.arange(owner.shape[0]),atr))], axis=1))
-        atr = np.union1d(atr,us[us_add])
-        atr = np.union1d(atr,them[them_add])
-        hashh = hash(atr.tobytes())
-        if hashh==old:
-            break
+        old = atr.copy()
+        us_add = numba_any_axis1(edges[us][:,atr])
 
+        them_add = ~numba_any_axis1(edges[them][:,~atr])
+        atr[(np.where(us)[0])[us_add]] = True
+        atr[(np.where(them)[0])[them_add]] = True
+        if np.all(atr==old):
+            break
     return atr
 
 def zielonka(owner, edges, priority):
 
-    if owner.size == 0:
-        return np.array([], dtype=np.int64), np.array([], dtype=np.int64)
+    if len(owner) == 0:
+        return np.array([], dtype=bool)
     else:
         m = np.max(priority)
         player = m%2
-        U = np.where(priority==m)[0]
-        A = find_attractor(player, owner, edges, U)
-        A_inv = np.setdiff1d(np.arange(owner.shape[0]), A)
-        even, odd = zielonka(owner[A_inv], edges[np.ix_(A_inv,A_inv)], priority[A_inv])
-        if (player and even.size == 0) or (not player and odd.size == 0):
-            return (np.array([], dtype=np.int64),np.union1d(A_inv[odd],A)) if player else (np.union1d(A_inv[even],A),np.array([], dtype=np.int64))
+        A = find_attractor(player, owner, edges, (priority==m))
+        z1 = zielonka(owner[~A], edges[np.ix_(~A,~A)], priority[~A])
+        if (player and (~np.any(~z1))) or (not player and (~np.any(z1))):
+            return np.ones(len(owner), dtype=bool) if player else np.zeros(len(owner), dtype=bool)
         else:
-            B = find_attractor(1-player, owner, edges, A_inv[even] if player else A_inv[odd])
-            B_inv = np.setdiff1d(np.arange(owner.shape[0]), B)
-            even2, odd2 = zielonka(owner[B_inv], edges[np.ix_(B_inv,B_inv)], priority[B_inv])
-            return (np.union1d(B_inv[even2],B),B_inv[odd2]) if player else (B_inv[even2],np.union1d(B_inv[odd2],B))
+            x = np.zeros(len(owner), dtype=bool)
+            y = np.zeros(len(owner), dtype=bool)
+            x[(np.where(~A)[0])[~z1]] = True
+            y[(np.where(~A)[0])[z1]] = True
+            B = find_attractor(1-player, owner, edges, x if player else y)
+            z2 = zielonka(owner[~B], edges[np.ix_(~B,~B)], priority[~B])
+            if player:
+                a = np.zeros(len(owner), dtype=bool)
+                a[(np.where(~B)[0])[z2]] = True
+                return a
+            else:
+                b = np.ones(len(owner), dtype=bool)
+                b[(np.where(~B)[0])[~z2]] = False
+                return b
 
 class ParityGame(Game):
 
@@ -75,12 +91,7 @@ class ParityGame(Game):
 
     def solve_value_zielonka(self):
 
-        z = zielonka(self.owner, self.edges, self.priority)
-
-        ret = np.zeros(len(self.owner), dtype=bool)
-        ret[z[1]] = True
-
-        return ret
+        return zielonka(self.owner, self.edges, self.priority)
 
     def solve_strat_zielonka(self):
 
@@ -150,7 +161,10 @@ class ParityGame(Game):
         view = Digraph(format="png")
         view.attr(bgcolor="#f0f0f0", forcelabels="True")
         for i,(owner, priority) in enumerate(zip(self.owner, self.priority)):
-            label = f"<v(v<sub>{i}</sub>)={e_o[values[i]]}>"
+            if type(values) != type(None):
+                label = f"<v(v<sub>{i}</sub>)={e_o[values[i]]}>"
+            else:
+                label = f"<v<sub>{i}</sub>>"
             view.node(f"{i}", label=label, xlabel=f"{priority}", shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
         idx = np.where(self.edges==True)
         for s,t in zip(idx[0],idx[1]):

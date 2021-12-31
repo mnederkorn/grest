@@ -16,13 +16,49 @@ def numba_min_axis1(x):
     return out
 
 @jit(nopython=True, cache=True)
+def numba_max_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.max(x[i])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_argmax_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.argmax(x[i])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_argmin_axis0(x):
+    out = np.empty(x.shape[1], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.argmin(x[:,i])
+    return out
+
+@jit(nopython=True, cache=True)
 def numba_min_initial(x):
     if len(x)!=0:
         return np.min(x)
     else:
         return int(-1)
 
+@jit(nopython=True, cache=True)
+def numba_any_axis0(x):
+    out = np.zeros(x.shape[1], dtype=np.bool8)
+    for i in range(x.shape[0]):
+        out = np.logical_or(out, x[i, :])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_any_axis1(x):
+    out = np.zeros(x.shape[0], dtype=np.bool8)
+    for i in range(x.shape[1]):
+        out = np.logical_or(out, x[:, i])
+    return out
+
 # BellmanFord
+@jit(nopython=True, cache=True)
 def find_negative_cycle_nodes(edges):
 
     mini = np.iinfo(edges.dtype).min
@@ -37,32 +73,30 @@ def find_negative_cycle_nodes(edges):
 
     for i in range(1,edges_src.shape[0]+1):
 
-        src_is_pred = np.tile((dist!=maxi).reshape(-1,1),edges_src.shape[0])
+        src_is_pred = (dist!=maxi).repeat(len(edges_src)).reshape(-1, len(edges_src))
         new_dist = dist.reshape(-1,1)+edges_src
         shorter = new_dist<dist
 
         valids = (edges_src!=mini)&src_is_pred
 
-        maa=np.ma.masked_array(new_dist, ~valids)
+        exists_shorter = numba_any_axis0(valids&shorter)
 
-        exists_shorter = np.any(valids&shorter,axis=0)
-
-        shorter_idx = np.argmin(maa, axis=0)
+        shorter_idx = numba_argmin_axis0(np.where(valids, new_dist, maxi))
 
         pred = np.where(exists_shorter, shorter_idx, pred)
-        dist = np.where(exists_shorter, new_dist[shorter_idx,np.arange(edges_src.shape[1])], dist)
+        dist = np.where(exists_shorter, np.diag(new_dist[shorter_idx]), dist)
 
-    cycle_nodes_t = set()
+    cycle_nodes_t = np.full(len(edges), False)
 
     for n in np.where(exists_shorter)[0]:
 
-        cycle_nodes = set()
+        cycle_nodes = np.full(len(edges), False)
 
         s = [n]
 
         for x in range(edges_src.shape[0]-1):
             if pred[n] == s[0]:
-                cycle_nodes|=set(s)
+                cycle_nodes[np.array(s)] = True
                 break
             else:
                 s.append(pred[n])
@@ -70,50 +104,76 @@ def find_negative_cycle_nodes(edges):
 
         cycle_nodes_t|=cycle_nodes
 
-    ret = np.array(list(cycle_nodes_t))
+    ret = np.where(cycle_nodes_t)[0]
 
-    if len(ret)!=0:
-        return pred[ret], ret
-    else:
-        return np.array([],dtype=np.int64), ret
+    return pred[ret], ret
 
 # BellmanFord finds (at least) one negative cycle but not necessarily all so we need to iterate
+@jit(nopython=True, cache=True)
 def find_all_negative_cycle_nodes(edges):
 
     mini = np.iinfo(edges.dtype).min
 
     neg_strat = np.full(len(edges), -1, dtype=np.int64)
 
-    cycle_nodes = np.array([],dtype=edges.dtype)
+    # cycle_nodes = np.array([],dtype=edges.dtype)
+    cycle_nodes = np.full(len(edges), False)
 
     while True:
-        restriction = np.setdiff1d(np.arange(edges.shape[0]),cycle_nodes)
-        ret, ret_strat = find_negative_cycle_nodes(edges[np.ix_(restriction,restriction)])
+        restriction = np.where(~cycle_nodes)[0]
+        ret, ret_strat = find_negative_cycle_nodes(edges[restriction][:,restriction])
         if len(ret)==0:
             break
         else:
             neg_strat[restriction[ret]] = restriction[ret_strat]
-            cycle_nodes=np.hstack((cycle_nodes,restriction[ret]))
+            cycle_nodes[restriction[ret]] = True
 
-
-
-    if len(cycle_nodes)!=0:
+    if np.any(cycle_nodes):
         while True:
-            old=len(cycle_nodes)
+            old=cycle_nodes.copy()
 
-            adds = np.any(edges[:,cycle_nodes]!=mini, axis=1)
+            adds = numba_any_axis1(edges[:,cycle_nodes]!=mini)
             adds[cycle_nodes]=False
 
-            neg_strat[adds] = cycle_nodes[np.argmax(edges[np.ix_(adds,cycle_nodes)], 1)]
+            neg_strat[adds] = (np.where(cycle_nodes)[0])[numba_argmax_axis1(edges[adds][:,cycle_nodes])]
 
-            cycle_nodes=np.union1d(cycle_nodes,np.nonzero(adds))
+            cycle_nodes|=adds
 
-            if len(cycle_nodes)==old:
+            if np.all(cycle_nodes==old):
                 break
 
     return cycle_nodes, neg_strat[cycle_nodes]
 
-class EnergyGame(Game):
+@jit(nopython=True, cache=True)
+def strat_iter_below_kleene(owner, edges, strat, nW):
+
+    mini = np.iinfo(edges.dtype).min
+    maxi = np.iinfo(edges.dtype).max
+
+    f = np.full(len(owner), 0)
+
+    while True:
+
+        old = f.copy()
+
+        edges_weight = np.where(edges!=mini,np.maximum(np.minimum(f-edges,3*nW),0),edges)
+
+        edges_weight = np.where(edges_weight==mini, maxi, edges_weight)
+
+        f = np.where(owner, np.diag(edges_weight[:,strat]), numba_min_axis1(edges_weight))
+
+        edges_weight = np.where(edges_weight==maxi, mini, edges_weight)
+
+        if np.all(f==old):
+            break
+
+    g = np.diag(edges_weight[:,strat])<np.diag(edges_weight[:,numba_argmax_axis1(edges_weight)])
+
+    strat = np.where(owner&g, np.argmax(edges_weight,1), strat)
+
+    return f,g, strat
+
+class EnergyGame_n(Game):
 
     def __init__(self, owner, edges):
 
@@ -221,27 +281,35 @@ class EnergyGame(Game):
 
         return f
 
-    def solve_value_kleene(self):
+    def solve_value_kleene_wrap(self):
 
-        mini = np.iinfo(self.edges.dtype).min
-        maxi = np.iinfo(self.edges.dtype).max
+        return self.solve_value_kleene(self.owner, self.edges)
+
+    @staticmethod
+    @jit(nopython=True, cache=True)
+    def solve_value_kleene(owner, edges):
+
+        mini = np.iinfo(edges.dtype).min
+        maxi = np.iinfo(edges.dtype).max
 
         # M_(G^gamma)
-        max_cycle_cost = -np.sum(np.min(np.clip(self.edges, mini, 0)*(self.edges!=mini), 1))
+        max_cycle_cost = -np.sum(numba_min_axis1(np.clip(edges, mini, 0)*(edges!=mini)))
 
-        f = np.zeros(len(self.owner),dtype=int)
+        # edges = edges.astype(np.int64)
+
+        f = np.full(len(owner), 0)
 
         while True:
 
-            old = np.array(f)
+            old = f.copy()
 
-            edges = f-self.edges
+            edges_weight = f-edges
 
-            edges_weight = np.where((f!=-1)&(edges<=max_cycle_cost), np.clip(edges, 0, maxi), maxi)
+            edges_weight = np.where((f!=-1)&(edges_weight<=max_cycle_cost), np.clip(edges_weight, 0, maxi), maxi)
 
-            edges_weight = np.where(self.owner.reshape(-1,1), np.where(self.edges!=mini, edges_weight, mini), np.where(self.edges!=mini, edges_weight, maxi))
+            edges_weight = np.where(owner.repeat(len(owner)).reshape(-1, len(owner)), np.where(edges!=mini, edges_weight, mini), np.where(edges!=mini, edges_weight, maxi))
 
-            edges_weight = np.where(self.owner, np.max(edges_weight, 1), np.min(edges_weight, 1))
+            edges_weight = np.where(owner, numba_max_axis1(edges_weight), numba_min_axis1(edges_weight))
 
             f = np.where(edges_weight==maxi, -1, edges_weight)
 
@@ -319,32 +387,13 @@ class EnergyGame(Game):
 
             strat_hist.append(hash(strat.tobytes()))
 
-            f = np.zeros(len(owner),dtype=int)
-
-            while True:
-
-                old = np.array(f)
-
-                edges_weight = np.where(edges!=mini,np.maximum(np.minimum(f-edges,3*nW),0),edges)
-
-                edges_weight = np.where(edges_weight==mini, maxi, edges_weight)
-
-                f = np.where(owner, edges_weight[np.arange(edges_weight.shape[0]),strat], np.min(edges_weight, 1))
-
-                edges_weight = np.where(edges_weight==maxi, mini, edges_weight)
-
-                if np.all(f==old):
-                    break
-
-            g = edges_weight[np.arange(edges.shape[0]),strat]<edges_weight[np.arange(edges.shape[0]),np.argmax(edges_weight,1)]
-
-            strat = np.where(owner&g, np.argmax(edges_weight,1), strat)
+            f,g,strat = strat_iter_below_kleene(owner, edges, strat, nW)
 
         full = np.full(self.edges.shape[0], -1, dtype=np.int32)
 
         f = np.where(f<nW, f, -1)[:-1]
 
-        full[np.setdiff1d(np.arange(self.edges.shape[0]), p1[cycle_nodes])]=f
+        full[np.setdiff1d(np.arange(self.edges.shape[0]),p1[cycle_nodes])]=f
 
         return_strat = np.full(len(self.edges), -1)
 
