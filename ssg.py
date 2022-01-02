@@ -15,7 +15,7 @@ class SimpleStochasticGame(Game):
     @classmethod
     def generate(cls, n, p):
         assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
-        p=((p*n)-1)/(n-1)
+        p=max(0,min(((p*n)-1)/(n-1),1))
         owner = np.random.randint(0, 3, size=(n), dtype=np.uint8)
         edges = np.empty((n,n+2), dtype=bool)
         for e in edges:

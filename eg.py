@@ -11,18 +11,43 @@ from math import ceil
 @jit(nopython=True, cache=True)
 def numba_min_axis1(x):
     out = np.empty(x.shape[0], dtype=x.dtype)
-    for i in range(x.shape[0]):
+    for i in range(x.shape[1]):
         out[i] = np.min(x[i])
     return out
 
 @jit(nopython=True, cache=True)
-def numba_min_initial(x):
-    if len(x)!=0:
-        return np.min(x)
-    else:
-        return int(-1)
+def numba_argmax_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[1]):
+        out[i] = np.argmax(x[i])
+    return out
 
-# BellmanFord
+@jit(nopython=True, cache=True)
+def numba_argmin_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[1]):
+        out[i] = np.argmin(x[i])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_min_(x):
+    cand = np.where(x!=-1)[0]
+    if len(cand)!=0:
+        y = cand[np.argmin(x[cand])]
+        return x[y], y
+    else:
+        return -1, 0
+
+@jit(nopython=True, cache=True)
+def numba_max_(x):
+    y = np.where(x==-1)[0]
+    if len(y)>0:
+        return x[y[0]], y[0]
+    else:
+        cand = np.where(x!=-1)[0]
+        y = cand[np.argmax(x[cand])]
+        return x[y], y
+
 def find_negative_cycle_nodes(edges):
 
     mini = np.iinfo(edges.dtype).min
@@ -122,7 +147,7 @@ class EnergyGame(Game):
     @classmethod
     def generate(cls, n, p, w):
         assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
-        p=((p*n)-1)/(n-1)
+        p=max(0,min(((p*n)-1)/(n-1),1))
         owner = np.random.choice([False, True], size=(n))
         edges_exist = np.empty((n,n), dtype=bool)
         for e in edges_exist:
@@ -136,18 +161,19 @@ class EnergyGame(Game):
 
         return cls(owner, edges)
 
-    def solve_value_bcdgr_wrap(self):
+    def solve_both_bcdgr_wrap(self):
 
-        return self.solve_value_bcdgr(self.owner, self.edges)
+        return self.solve_both_bcdgr(self.owner, self.edges)
 
     @staticmethod
     @jit(nopython=True, cache=True)
-    def solve_value_bcdgr(owner, edges):
+    def solve_both_bcdgr(owner, edges):
 
         p0 = np.where(owner==False)[0]
         p1 = np.where(owner==True)[0]
 
         mini = np.iinfo(edges.dtype).min
+        maxi = np.iinfo(edges.dtype).max
 
         # l = set()
         l = np.full(len(owner), False)
@@ -176,7 +202,7 @@ class EnergyGame(Game):
             if np.any(np.logical_and(edges[v]<0,edges[v]!=mini)):
                 l[v] = True
 
-        f = np.full(len(owner), 0)
+        f = np.full(len(owner), 0, dtype=np.int32)
 
         cnt = np.zeros(len(owner))
 
@@ -190,20 +216,9 @@ class EnergyGame(Game):
             l[v]=False
             old=f[v]
             if not owner[v]:
-                f[v]=numba_min_initial(np.array([minus(f[w],edges[v,w]) for w in np.where(edges[v]!=mini)[0] if minus(f[w],edges[v,w])!=-1]))
+                f[v], _ = numba_min_(np.array([minus(f[w],edges[v,w]) for w in np.where(edges[v]!=mini)[0]]))
             else:
-                ma=0
-                cand=None
-                for w in np.where(edges[v]!=mini)[0]:
-                    minus_w=minus(f[w],edges[v,w])
-                    if minus_w==-1:
-                        ma=-1
-                        cand=w
-                        break
-                    elif minus_w>ma:
-                        cand=w
-                        ma=minus_w
-                f[v]=ma
+                f[v], _ = numba_max_(np.array([minus(f[w],edges[v,w]) for w in np.where(edges[v]!=mini)[0]]))
             if not owner[v]:
                 cnt[v]=0
                 for w in np.where(edges[v]!=mini)[0]:
@@ -219,7 +234,14 @@ class EnergyGame(Game):
                 else:
                     l[u] = True
 
-        return f
+        return_strat = np.full(len(edges), -1, dtype=np.int32)
+
+        for i in range(len(owner)):
+            if not owner[i]:
+                _, cand = numba_min_(np.array([minus(f[w],edges[i,w]) for w in np.where(edges[i]!=mini)[0]]))
+                return_strat[i] = np.where(edges[i]!=mini)[0][cand]
+
+        return f, return_strat
 
     def solve_value_kleene(self):
 
@@ -484,11 +506,13 @@ class EnergyGame(Game):
             for i in np.where(strat!=-1)[0]:
                 edges[i,strat[i]]=self.edges[i,strat[i]]
 
-            return EnergyGame(self.owner, edges).solve_value_bcdgr()
+            ret = EnergyGame(self.owner, edges).solve_both_bcdgr_wrap()
 
         else:
 
-            return self.solve_value_bcdgr()
+            ret = self.solve_both_bcdgr_wrap()
+
+        return ret[0]
 
     def solve_strat(self):
 

@@ -10,6 +10,13 @@ bright = "cf"
 colour = {0:{False:f"#00{dark}00",True:f"#00{bright}00"},1:{False:f"#{dark}0000",True:f"#{bright}0000"},2:{False:f"#0000{middle}",True:f"#0000{middle}"}}
 shape = {0:"square", 1:"circle", 2:"diamond"}
 
+def printm(edges):
+
+    mini = np.iinfo(edges.dtype).min
+    maxi = np.iinfo(edges.dtype).max
+    
+    print(np.where(edges==mini,"-",np.where(edges==maxi,"+",np.where(edges==np.nan,"x",edges))))
+
 class Game:
 
     def __init__(self, owner, edges):
@@ -36,11 +43,3 @@ class Game:
                     return game
                 except Exception as e:
                     print(e)
-
-    @staticmethod
-    def printm(edges):
-
-        mini = np.iinfo(edges.dtype).min
-        maxi = np.iinfo(edges.dtype).max
-        
-        print(np.where(edges==mini,"-",np.where(edges==maxi,"+",np.where(edges==np.nan,"x",edges))))

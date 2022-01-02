@@ -40,15 +40,15 @@ def find_attractor(player, owner, edges, Nh):
             break
     return atr
 
-def zielonka(owner, edges, priority):
+def zielonka(owner, edges, priorities):
 
     if len(owner) == 0:
         return np.array([], dtype=bool)
     else:
-        m = np.max(priority)
+        m = np.max(priorities)
         player = m%2
-        A = find_attractor(player, owner, edges, (priority==m))
-        z1 = zielonka(owner[~A], edges[np.ix_(~A,~A)], priority[~A])
+        A = find_attractor(player, owner, edges, (priorities==m))
+        z1 = zielonka(owner[~A], edges[np.ix_(~A,~A)], priorities[~A])
         if (player and (~np.any(~z1))) or (not player and (~np.any(z1))):
             return np.ones(len(owner), dtype=bool) if player else np.zeros(len(owner), dtype=bool)
         else:
@@ -57,7 +57,7 @@ def zielonka(owner, edges, priority):
             x[(np.where(~A)[0])[~z1]] = True
             y[(np.where(~A)[0])[z1]] = True
             B = find_attractor(1-player, owner, edges, x if player else y)
-            z2 = zielonka(owner[~B], edges[np.ix_(~B,~B)], priority[~B])
+            z2 = zielonka(owner[~B], edges[np.ix_(~B,~B)], priorities[~B])
             if player:
                 a = np.zeros(len(owner), dtype=bool)
                 a[(np.where(~B)[0])[z2]] = True
@@ -69,15 +69,15 @@ def zielonka(owner, edges, priority):
 
 class ParityGame(Game):
 
-    def __init__(self, owner, edges, priority):
+    def __init__(self, owner, edges, priorities):
 
         super().__init__(owner, edges)
-        self.priority = priority
+        self.priorities = priorities
 
     @classmethod
     def generate(cls, n, p, h):
         assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
-        p=((p*n)-1)/(n-1)
+        p=max(0,min(((p*n)-1)/(n-1),1))
         owner = np.random.choice([False, True], size=(n))
         edges = np.empty((n,n), dtype=bool)
         for e in edges:
@@ -85,13 +85,13 @@ class ParityGame(Game):
             e[rng] = True
             e[:rng] = np.random.choice([False, True], size=rng, p=[1-p, p])
             e[rng+1:] = np.random.choice([False, True], size=n-(rng+1), p=[1-p, p])
-        priority = np.random.randint(0, h, size=(n))
+        priorities = np.random.randint(0, h, size=(n))
 
-        return cls(owner, edges, priority)
+        return cls(owner, edges, priorities)
 
     def solve_value_zielonka(self):
 
-        return zielonka(self.owner, self.edges, self.priority)
+        return zielonka(self.owner, self.edges, self.priorities)
 
     def solve_strat_zielonka(self):
 
@@ -108,7 +108,7 @@ class ParityGame(Game):
                 e = edges.copy()
                 e[i]=False
                 e[i,one]=True
-                x = ParityGame(self.owner, e, self.priority).solve_value_zielonka()
+                x = ParityGame(self.owner, e, self.priorities).solve_value_zielonka()
                 if np.all(x==z):
                     if len(one)==1:
                         ret[i]=one[0]
@@ -130,7 +130,7 @@ class ParityGame(Game):
             for i in np.where(strat!=-1)[0]:
                 edges[i,strat[i]]=True
 
-            return ParityGame(self.owner, edges, self.priority).solve_value_zielonka()
+            return ParityGame(self.owner, edges, self.priorities).solve_value_zielonka()
 
         else:
 
@@ -142,13 +142,39 @@ class ParityGame(Game):
 
     def to_mpg(self):
 
-        edges_exist = self.edges
-        edges_value = np.fromfunction(lambda x,y: (-len(self.owner))**self.priority[x], shape=(len(self.owner),len(self.owner)), dtype=int)
+        mini = np.iinfo(np.int32).min
 
-        mini = np.iinfo(edges_value.dtype).min
-        edges = np.where(edges_exist, edges_value, mini)
+        prios_k = np.argsort(self.priorities)
+        prios = self.priorities[prios_k]
+        prios_even = prios%2==0
+        weight = np.zeros(len(self.owner), dtype=int)
+
+        for i,pr in enumerate(prios):
+            if pr%2==0:
+                weight[i]=np.sum(weight[:i][~prios_even[:i]])+1
+            else:
+                weight[i]=np.sum(weight[:i][prios_even[:i]])+1
+
+        weight[~prios_even]=-weight[~prios_even]
+
+        y=np.empty(len(self.owner), dtype=int)
+        y[prios_k]=weight
+
+        edges = np.where(self.edges, np.tile(y.reshape(-1,1),len(self.owner)), mini)
 
         return MeanPayoffGame(self.owner, edges)
+
+    def solve_value_mpg(self):
+
+        mpg = self.to_mpg()
+
+        return mpg.solve_value()>=0
+
+    def solve_strat_mpg(self):
+
+        mpg = self.to_mpg()
+
+        return mpg.solve_strat()
 
     def visualise(self, target_path=None, strat=None, values=None):
 
@@ -160,14 +186,15 @@ class ParityGame(Game):
 
         view = Digraph(format="png")
         view.attr(bgcolor="#f0f0f0", forcelabels="True")
-        for i,(owner, priority) in enumerate(zip(self.owner, self.priority)):
+        for i,(owner, priorities) in enumerate(zip(self.owner, self.priorities)):
             if type(values) != type(None):
                 label = f"<v(v<sub>{i}</sub>)={e_o[values[i]]}>"
             else:
                 label = f"<v<sub>{i}</sub>>"
-            view.node(f"{i}", label=label, xlabel=f"{priority}", shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
+            view.node(f"{i}", label=label, xlabel=f"{priorities}", shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
         idx = np.where(self.edges==True)
         for s,t in zip(idx[0],idx[1]):
+            print(s,t)
             view.edge(str(s),str(t), fontcolor=colour[self.owner[s]][strat[s]==t], color=colour[self.owner[s]][strat[s]==t])
 
         save_loc = view.render(filename=target_path, view=False, cleanup=True)

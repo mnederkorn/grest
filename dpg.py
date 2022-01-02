@@ -7,6 +7,20 @@ from tempfile import gettempdir
 import copy
 from numba import jit
 
+@jit(nopython=True, cache=True)
+def numba_nanmin_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.nanmin(x[i])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_nanmax_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.nanmax(x[i])
+    return out
+
 class DiscountedPayoffGame(Game):
 
     def __init__(self, owner, edges, discount):
@@ -17,7 +31,7 @@ class DiscountedPayoffGame(Game):
     @classmethod
     def generate(cls, n, p, w):
         assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
-        p=((p*n)-1)/(n-1)
+        p=max(0,min(((p*n)-1)/(n-1),1))
         owner = np.random.choice([False, True], size=(n))
         edges_exist = np.empty((n,n), dtype=bool)
         for e in edges_exist:
@@ -160,7 +174,7 @@ class DiscountedPayoffGame(Game):
 
         mini = np.iinfo(self.edges.dtype).min
 
-        z = self.solve_value_kleene()
+        z = self.solve_value_kleene_wrap()
 
         return np.argmin(np.where(self.edges!=mini, np.abs(((self.discount*z)+((1-self.discount)*self.edges))-z.reshape(-1,1)), 1000),1)
 
@@ -179,7 +193,7 @@ class DiscountedPayoffGame(Game):
 
         else:
 
-            return self.solve_value_kleene()
+            return self.solve_value_kleene_wrap()
 
     def solve_strat(self):
 
