@@ -29,18 +29,18 @@ if __name__ == "__main__":
     w=int(n)
     # w = int(log(n, 2))
 
-    while True:
+    o, e, h = 0,0,0
 
-        mpg = MeanPayoffGame.generate(n, p, w)
-        # mpg = Game.load(r"C:\ata\uni\master\grest\grest\graphs\MeanPayoffGame_2022-01-02-09-54-09.bin")
-        # mpg.owner[0]=True
-        # mpg.visualise()
-        # mpg.save()
-        x = mpg.solve_value()
-        y = mpg.solve_value_eg()
+    for i in count(1):
 
-        print(x,y)
+        mpg = SimpleStochasticGame.generate(n, p)
 
-        if not np.all(x==y):
-            mpg.save()
+        o += np.count_nonzero(mpg.owner)
+        e += np.count_nonzero(mpg.edges!=mini)
+        if np.count_nonzero(mpg.owner==2)!=0:
+            h += np.sum(mpg.avg)/np.count_nonzero(mpg.owner==2)
+
+        print(o/i, e/i, h/i)
+
+        if not np.average(np.count_nonzero(mpg.edges, 1)):
             exit()

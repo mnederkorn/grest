@@ -21,6 +21,20 @@ def numba_nanmax_axis1(x):
         out[i] = np.nanmax(x[i])
     return out
 
+@jit(nopython=True, cache=True)
+def numba_argmax_axis1(x):
+    out = np.empty(x.shape[0], dtype=np.int32)
+    for i in range(x.shape[1]):
+        out[i] = np.argmax(x[i])
+    return out
+
+@jit(nopython=True, cache=True)
+def numba_argmin_axis1(x):
+    out = np.empty(x.shape[0], dtype=np.int32)
+    for i in range(x.shape[1]):
+        out[i] = np.argmin(x[i])
+    return out
+
 class DiscountedPayoffGame(Game):
 
     def __init__(self, owner, edges, discount):
@@ -30,31 +44,14 @@ class DiscountedPayoffGame(Game):
 
     @classmethod
     def generate(cls, n, p, w):
-        assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
-        p=max(0,min(((p*n)-1)/(n-1),1))
-        owner = np.random.choice([False, True], size=(n))
-        edges_exist = np.empty((n,n), dtype=bool)
-        for e in edges_exist:
-            rng = np.random.randint(n)
-            e[rng] = True
-            e[:rng] = np.random.choice([False, True], size=rng, p=[1-p, p])
-            e[rng+1:] = np.random.choice([False, True], size=n-(rng+1), p=[1-p, p])
-        edges_value = np.random.randint(-w, w+1, size=(n,n))
-        mini = np.iinfo(edges_value.dtype).min
-        edges = np.where(edges_exist, edges_value, mini)
-        discount = np.random.rand(1)
 
-        return cls(owner, edges, discount)
+        return cls(*super().generate(n, p, w), np.random.rand(1))
 
     def to_ssg(self):
 
-        # to_ssg_strat = np.argmax(ssg.edges[strat[np.where(strat!=-1)],:-2], 1)
-
         mini = np.iinfo(self.edges.dtype).min
 
-        empty_as_zero = np.where(self.edges != mini, self.edges, 0)
-
-        W = max(abs(np.amin(empty_as_zero)),abs(np.amax(empty_as_zero)))
+        W = np.max(np.abs(np.where(self.edges!=mini, self.edges, 0)))
 
         edges = np.where(self.edges != mini, self.edges+W, self.edges)
 
@@ -70,28 +67,42 @@ class DiscountedPayoffGame(Game):
 
         avg_chance = np.zeros((f3, vertices+2))
 
-        strat_map = np.zeros((len(self.owner),len(self.owner)), dtype=bool)
+        strat_map = np.zeros(f3, dtype=int)
 
         for i,edge in enumerate(zip(f3pos[0],f3pos[1])):
             ssg_edges[edge[0], i+len(self.owner)] = True
             ssg_edges[i+len(self.owner), edge[1]] = True
+            strat_map[i]=edge[1]
             ssg_edges[i+len(self.owner), -1] = True
             ssg_edges[i+len(self.owner), -2] = True
             avg_chance[i, edge[1]] = self.discount
             avg_chance[i, -2] = (1-self.discount)*(1-(edges[edge]/(2*W)))
             avg_chance[i, -1] = (1-self.discount)*(edges[edge]/(2*W))
             
-        return SimpleStochasticGame(owner, ssg_edges, avg_chance, True)
+        return SimpleStochasticGame(owner, ssg_edges, avg_chance, True), strat_map, W
 
-    def solve_value_kleene_wrap(self):
+    def solve_both_ssg(self):
 
-        return self.solve_value_kleene(self.owner, self.edges, self.discount)
+        ssg, smap, W = self.to_ssg()
+
+        v, s = ssg.solve_both_kleene()
+
+        v = (v[:len(self.owner)]*2*W)-W
+
+        s = smap[s-len(self.owner)][:len(self.owner)]
+
+        return v, s
+
+    def solve_both_kleene_wrap(self):
+
+        return self.solve_both_kleene(self.owner, self.edges, self.discount)
 
     @staticmethod
     @jit(nopython=True, cache=True)
-    def solve_value_kleene(owner, edges, discount):
+    def solve_both_kleene(owner, edges, discount):
 
         mini = np.iinfo(edges.dtype).min
+        maxi = np.iinfo(edges.dtype).max
 
         cur = np.zeros(len(owner))
 
@@ -108,7 +119,12 @@ class DiscountedPayoffGame(Game):
             # iterate until max float precision is hit
             if max_err <1e-14:
                 break
-        return cur
+
+        strat = np.where(owner, numba_argmin_axis1(np.where(edges!=mini, (1-discount)*edges+discount*cur, maxi)), numba_argmax_axis1(np.where(edges!=mini, (1-discount)*edges+discount*cur, mini)))
+
+        print(strat.dtype)
+
+        return cur, strat
 
     def solve_both_strat_iter(self, player):
 
@@ -170,14 +186,6 @@ class DiscountedPayoffGame(Game):
 
         return np.array([v_n.solution_value() for v_n in v]),strat
 
-    def solve_strat_kleene(self):
-
-        mini = np.iinfo(self.edges.dtype).min
-
-        z = self.solve_value_kleene_wrap()
-
-        return np.argmin(np.where(self.edges!=mini, np.abs(((self.discount*z)+((1-self.discount)*self.edges))-z.reshape(-1,1)), 1000),1)
-
     def solve_value(self, strat=None):
 
         if type(strat) != type(None):
@@ -189,15 +197,15 @@ class DiscountedPayoffGame(Game):
             for i in np.where(strat!=-1)[0]:
                 edges[i,strat[i]]=self.edges[i,strat[i]]
 
-            return DiscountedPayoffGame(self.owner, edges, self.discount).solve_value_kleene()
+            return DiscountedPayoffGame(self.owner, edges, self.discount).solve_both_kleene_wrap()[0]
 
         else:
 
-            return self.solve_value_kleene_wrap()
+            return self.solve_both_kleene_wrap()[0]
 
     def solve_strat(self):
 
-        return self.solve_strat_kleene()
+            return self.solve_both_kleene_wrap()[1]
 
     def visualise(self, target_path=None, strat=None, values=None):
 

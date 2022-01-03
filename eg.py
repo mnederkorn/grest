@@ -17,14 +17,14 @@ def numba_min_axis1(x):
 
 @jit(nopython=True, cache=True)
 def numba_argmax_axis1(x):
-    out = np.empty(x.shape[0], dtype=x.dtype)
+    out = np.empty(x.shape[0], dtype=np.int32)
     for i in range(x.shape[1]):
         out[i] = np.argmax(x[i])
     return out
 
 @jit(nopython=True, cache=True)
 def numba_argmin_axis1(x):
-    out = np.empty(x.shape[0], dtype=x.dtype)
+    out = np.empty(x.shape[0], dtype=np.int32)
     for i in range(x.shape[1]):
         out[i] = np.argmin(x[i])
     return out
@@ -146,20 +146,8 @@ class EnergyGame(Game):
 
     @classmethod
     def generate(cls, n, p, w):
-        assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
-        p=max(0,min(((p*n)-1)/(n-1),1))
-        owner = np.random.choice([False, True], size=(n))
-        edges_exist = np.empty((n,n), dtype=bool)
-        for e in edges_exist:
-            rng = np.random.randint(n)
-            e[rng] = True
-            e[:rng] = np.random.choice([False, True], size=rng, p=[1-p, p])
-            e[rng+1:] = np.random.choice([False, True], size=n-(rng+1), p=[1-p, p])
-        edges_value = np.random.randint(-w, w+1, size=(n,n))
-        mini = np.iinfo(edges_value.dtype).min
-        edges = np.where(edges_exist, edges_value, mini)
 
-        return cls(owner, edges)
+        return cls(*super().generate(n, p, w))
 
     def solve_both_bcdgr_wrap(self):
 
@@ -506,13 +494,30 @@ class EnergyGame(Game):
             for i in np.where(strat!=-1)[0]:
                 edges[i,strat[i]]=self.edges[i,strat[i]]
 
+            return EnergyGame(self.owner, edges).solve_both_bcdgr_wrap()[0]
+
+        else:
+
+            return self.solve_both_bcdgr_wrap()[0]
+
+    def solve_both(self, strat=None):
+
+        if type(strat) != type(None):
+
+            mini = np.iinfo(self.edges.dtype).min
+
+            edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
+
+            for i in np.where(strat!=-1)[0]:
+                edges[i,strat[i]]=self.edges[i,strat[i]]
+
             ret = EnergyGame(self.owner, edges).solve_both_bcdgr_wrap()
 
         else:
 
             ret = self.solve_both_bcdgr_wrap()
 
-        return ret[0]
+        return ret
 
     def solve_strat(self):
 

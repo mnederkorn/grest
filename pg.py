@@ -78,15 +78,11 @@ class ParityGame(Game):
     def generate(cls, n, p, h):
         assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
         p=max(0,min(((p*n)-1)/(n-1),1))
-        owner = np.random.choice([False, True], size=(n))
-        edges = np.empty((n,n), dtype=bool)
-        for e in edges:
-            rng = np.random.randint(n)
-            e[rng] = True
-            e[:rng] = np.random.choice([False, True], size=rng, p=[1-p, p])
-            e[rng+1:] = np.random.choice([False, True], size=n-(rng+1), p=[1-p, p])
-        priorities = np.random.randint(0, h, size=(n))
-
+        owner = np.random.choice([False, True], size=n)
+        edges = np.zeros((n,n), dtype=bool)
+        edges[np.arange(n),np.random.randint(0, n, n)]=True
+        edges[edges==False]=np.random.choice([False, True], size = n*(n-1), p=[1-p, p])
+        priorities = np.random.randint(0, h, size=n)
         return cls(owner, edges, priorities)
 
     def solve_value_zielonka(self):
@@ -120,25 +116,6 @@ class ParityGame(Game):
             edges[i]=np.zeros(len(self.owner), dtype=bool)
             edges[i,ret[i]]=True
         return ret
-
-    def solve_value(self, strat=None):
-
-        if type(strat) != type(None):
-
-            edges = (strat==-1).reshape(-1,1)*self.edges
-
-            for i in np.where(strat!=-1)[0]:
-                edges[i,strat[i]]=True
-
-            return ParityGame(self.owner, edges, self.priorities).solve_value_zielonka()
-
-        else:
-
-            return self.solve_value_zielonka()
-
-    def solve_strat(self):
-
-        return self.solve_strat_zielonka()
 
     def to_mpg(self):
 
@@ -176,6 +153,25 @@ class ParityGame(Game):
 
         return mpg.solve_strat()
 
+    def solve_value(self, strat=None):
+
+        if type(strat) != type(None):
+
+            edges = (strat==-1).reshape(-1,1)*self.edges
+
+            for i in np.where(strat!=-1)[0]:
+                edges[i,strat[i]]=True
+
+            return ParityGame(self.owner, edges, self.priorities).solve_value_zielonka()
+
+        else:
+
+            return self.solve_value_zielonka()
+
+    def solve_strat(self):
+
+        return self.solve_strat_zielonka()
+
     def visualise(self, target_path=None, strat=None, values=None):
 
         if type(strat) == type(None):
@@ -194,7 +190,6 @@ class ParityGame(Game):
             view.node(f"{i}", label=label, xlabel=f"{priorities}", shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
         idx = np.where(self.edges==True)
         for s,t in zip(idx[0],idx[1]):
-            print(s,t)
             view.edge(str(s),str(t), fontcolor=colour[self.owner[s]][strat[s]==t], color=colour[self.owner[s]][strat[s]==t])
 
         save_loc = view.render(filename=target_path, view=False, cleanup=True)

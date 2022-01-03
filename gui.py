@@ -229,19 +229,15 @@ class Gui:
             messagebox.showwarning("", "Nodes # has to be at least 1\nAvg. outgoing Edges per Node has to be at least 1\nNodes # has to be greater or equal to Avg. outgoing Edges per Node")
             return
 
-        p=arg[1]/arg[0]
-
-        p=min(max(0,((p*arg[0])-1)/(arg[0]-1)),1)
-
         if hasattr(self, "values"):
             del self.values
         if hasattr(self, "strat"):
             del self.strat
 
         if typ in [MeanPayoffGame, DiscountedPayoffGame, EnergyGame, ParityGame]:
-            self.game = typ.generate(arg[0], p, arg[2])
+            self.game = typ.generate(arg[0], arg[1]/arg[0], arg[2])
         else:
-            self.game = DiscountedPayoffGame.generate(arg[0], p, 1).to_ssg()
+            self.game = DiscountedPayoffGame.generate(arg[0], arg[1]/arg[0], 1).to_ssg()[0]
 
         self.render()
 
@@ -253,7 +249,7 @@ class Gui:
         if typ!=SimpleStochasticGame:
             nodes_lab = Label(top, text="Nodes #")
         else:
-            nodes_lab = Label(top, text="Nodes #, excl. sinks")
+            nodes_lab = Label(top, text="Nodes #; excl. sinks, avg.")
         nodes_n = Spinbox(top, from_=1, to=100)
         nodes_n.delete(0, 1)
         nodes_n.insert(0, 8)

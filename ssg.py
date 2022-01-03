@@ -6,10 +6,10 @@ from graphviz import Digraph
 
 class SimpleStochasticGame(Game):
 
-    def __init__(self, owner, edges, avg_chance, stopping):
+    def __init__(self, owner, edges, avg, stopping):
 
         super().__init__(owner, edges)
-        self.avg_chance = avg_chance
+        self.avg = avg
         self.stopping = stopping
 
     @classmethod
@@ -17,22 +17,19 @@ class SimpleStochasticGame(Game):
         assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
         p=max(0,min(((p*n)-1)/(n-1),1))
         owner = np.random.randint(0, 3, size=(n), dtype=np.uint8)
-        edges = np.empty((n,n+2), dtype=bool)
-        for e in edges:
-            rng = np.random.randint(n+2)
-            e[rng] = True
-            e[:rng] = np.random.choice([False, True], size=rng, p=[1-p, p])
-            e[rng+1:] = np.random.choice([False, True], size=(n+2)-(rng+1), p=[1-p, p])
+        edges = np.zeros((n,n+2), dtype=bool)
+        edges[np.arange(n),np.random.randint(0, n+2, n)]=True
+        edges[edges==False]=np.random.choice([False, True], size = n*(n+1), p=[1-p, p])
 
-        avg_n = np.count_nonzero(owner==2)
-        avg_chance = np.random.random(size=(avg_n,n+2))
-        avg_chance = np.where(edges[np.where(owner==2)], avg_chance, 0)
+        e = np.where(owner==2)
+        avg = np.random.random(size=(len(e[0]),n+2))
+        avg = np.where(edges[e], avg, 0)
+        avg /= np.sum(avg,1).reshape(-1,1)
 
-        avg_chance = avg_chance/np.sum(avg_chance,1).reshape(-1,1)
+        return cls(owner, edges, avg, False)
 
-        return cls(owner, edges, avg_chance, False)
-
-    def solve_value_kleene(self):
+    # strats for avg/rng vertices as -1
+    def solve_both_kleene(self):
 
         cur = np.hstack((np.zeros(len(self.owner)), [0], [1]))
 
@@ -47,7 +44,7 @@ class SimpleStochasticGame(Game):
             cur[:-2] = np.where(self.owner == 1, np.nanmin(edges_weight, 1), cur[:-2])
 
             idx = np.where(self.owner == 2)
-            cur[idx]=np.sum(self.avg_chance*old, 1)
+            cur[idx]=np.sum(self.avg*old, 1)
 
             max_err = np.amax(np.abs(cur-old))
 
@@ -55,7 +52,9 @@ class SimpleStochasticGame(Game):
             if max_err == 0:
                 break
 
-        return cur
+        strats = np.where(self.owner==2, -1, np.where(self.owner==0, np.nanargmax(np.where(self.edges, cur, np.nan), 1), np.nanargmin(np.where(self.edges, cur, np.nan), 1)))
+
+        return cur, strats
 
     def solve_both_strat_iter(self, player):
 
@@ -93,7 +92,7 @@ class SimpleStochasticGame(Game):
                     else:
                         val = 0
                         for t in np.where(self.edges[s])[0]:
-                            val += (v[t]*self.avg_chance[np.nonzero(s==p2)[0][0],t])
+                            val += (v[t]*self.avg[np.nonzero(s==p2)[0][0],t])
                         solver.Add(v[s] == val)
 
             obj_func = v[0]
@@ -115,18 +114,7 @@ class SimpleStochasticGame(Game):
 
         return np.array([v_n.solution_value() for v_n in v]), strat
 
-    # strats for avg/rng vertices as -1
-    def solve_strat_kleene(self):
-
-        z = self.solve_value_kleene()
-
-        strats = np.where(self.owner==2, -1, np.where(self.owner==0, np.nanargmax(np.where(self.edges, z, np.nan), 1), np.nanargmin(np.where(self.edges, z, np.nan), 1)))
-
-        return strats
-
     def solve_value(self, strat=None):
-
-        print(self)
 
         if type(strat) != type(None):
 
@@ -135,15 +123,15 @@ class SimpleStochasticGame(Game):
             for i in np.where(strat!=-1)[0]:
                 edges[i,strat[i]]=True
 
-            return SimpleStochasticGame(self.owner, edges, self.avg_chance, self.stopping).solve_value_kleene()
+            return SimpleStochasticGame(self.owner, edges, self.avg, self.stopping).solve_both_kleene()[0]
 
         else:
 
-            return self.solve_value_kleene()
+            return self.solve_both_kleene()[0]
 
     def solve_strat(self):
 
-        return self.solve_strat_kleene()
+        return self.solve_both_kleene()[1]
 
     def visualise(self, target_path=None, strat=None, values=None):
 
@@ -172,7 +160,7 @@ class SimpleStochasticGame(Game):
 
         for i,s in enumerate(np.where(self.owner==2)[0]):
             for t in np.where(self.edges[s]==True)[0]:
-                view.edge(str(s),str(t),f"{self.avg_chance[i,t]:.2f}",fontcolor=colour[2][False], color=colour[2][False])
+                view.edge(str(s),str(t),f"{self.avg[i,t]:.2f}",fontcolor=colour[2][False], color=colour[2][False])
 
         save_loc = view.render(filename=target_path, view=False, cleanup=True)
 

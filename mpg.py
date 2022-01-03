@@ -82,25 +82,30 @@ def solve_value_eg_alg2(owner, edges, lower, upper):
     e3 = np.where(edges != mini, (a2[1]*edges)-a2[0], mini)
     e4 = np.where(edges != mini, (-a2[1]*edges)+a2[0], mini)
     
-    f1 = EnergyGame(owner, e1).solve_value()
-    f2 = EnergyGame(~owner, e2).solve_value()
-    f3 = EnergyGame(owner, e3).solve_value()
-    f4 = EnergyGame(~owner, e4).solve_value()
+    f1, s1 = EnergyGame(owner, e1).solve_both()
+    f2, s2 = EnergyGame(~owner, e2).solve_both()
+    f3, s3 = EnergyGame(owner, e3).solve_both()
+    f4, s4 = EnergyGame(~owner, e4).solve_both()
 
     v = np.empty(len(owner), dtype=float)
+    s = np.full(len(owner), -1, dtype=int)
 
     v = np.where((f1!=-1)&(f2!=-1), a1[0]/a1[1], v)
     v = np.where((f3!=-1)&(f4!=-1), a2[0]/a2[1], v)
+    s = np.where((f1!=-1)&(f2!=-1), np.where(s1!=-1, s1, s2), s)
+    s = np.where((f3!=-1)&(f4!=-1), np.where(s1!=-1, s3, s4), s)
 
     v1 = np.where(f1==-1)[0]
     v2 = np.where(f4==-1)[0]
 
     if len(v1)!=0:
-        v[v1] = solve_value_eg_alg2(owner[v1], edges[np.ix_(v1,v1)], lower, a1[0]/a1[1])
+        v[v1], st = solve_value_eg_alg2(owner[v1], edges[np.ix_(v1,v1)], lower, a1[0]/a1[1])
+        s[v1] = v1[st]
     if len(v2)!=0:
-        v[v2] = solve_value_eg_alg2(owner[v2], edges[np.ix_(v2,v2)], a2[0]/a2[1], upper)
+        v[v2], st = solve_value_eg_alg2(owner[v2], edges[np.ix_(v2,v2)], a2[0]/a2[1], upper)
+        s[v2] = v2[st]
 
-    return v
+    return v, s
 
 class MeanPayoffGame(Game):
 
@@ -108,29 +113,10 @@ class MeanPayoffGame(Game):
 
         super().__init__(owner, edges)
 
-    def __eq__(self, other):
-
-        if np.all(self.owner==other.owner) and np.all(self.edges==other.edges):
-            return True
-        else:
-            return False
-        
     @classmethod
     def generate(cls, n, p, w):
-        assert p>=1/n, "Since |post(v)| needs to be >=1 for every v, p needs to be at least p>=1/n"
-        p=max(0,min(((p*n)-1)/(n-1),1))
-        owner = np.random.choice([False, True], size=(n))
-        edges_exist = np.empty((n,n), dtype=bool)
-        for e in edges_exist:
-            rng = np.random.randint(n)
-            e[rng] = True
-            e[:rng] = np.random.choice([False, True], size=rng, p=[1-p, p])
-            e[rng+1:] = np.random.choice([False, True], size=n-(rng+1), p=[1-p, p])
-        edges_value = np.random.randint(-w, w+1, size=(n,n))
-        mini = np.iinfo(edges_value.dtype).min
-        edges = np.where(edges_exist, edges_value, mini)
 
-        return cls(owner, edges)
+        return cls(*super().generate(n, p, w))
 
     def solve_value_zwick_paterson_wrap(self):
 
@@ -211,27 +197,6 @@ class MeanPayoffGame(Game):
             edges[i,ret[i]]=tmp
         return ret
 
-    def solve_value(self, strat=None):
-
-        if type(strat) != type(None):
-
-            mini = np.iinfo(self.edges.dtype).min
-
-            edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
-
-            for i in np.where(strat!=-1)[0]:
-                edges[i,strat[i]]=self.edges[i,strat[i]]
-
-            return MeanPayoffGame(self.owner, edges).solve_value_zwick_paterson_wrap()
-
-        else:
-
-            return self.solve_value_zwick_paterson_wrap()
-
-    def solve_strat(self):
-
-        return self.solve_strat_zwick_paterson()
-
     def to_dpg(self):
 
         mini = np.iinfo(self.edges.dtype).min
@@ -256,13 +221,34 @@ class MeanPayoffGame(Game):
 
         return dpg.solve_strat()
 
-    def solve_value_eg(self):
+    def solve_both_eg(self):
 
         mini = np.iinfo(self.edges.dtype).min
 
         W = np.max(np.abs(np.where(self.edges != mini, self.edges, 0)))
 
         return solve_value_eg_alg2(self.owner, self.edges, -W, W)
+
+    def solve_value(self, strat=None):
+
+        if type(strat) != type(None):
+
+            mini = np.iinfo(self.edges.dtype).min
+
+            edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
+
+            for i in np.where(strat!=-1)[0]:
+                edges[i,strat[i]]=self.edges[i,strat[i]]
+
+            return MeanPayoffGame(self.owner, edges).solve_value_zwick_paterson_wrap()
+
+        else:
+
+            return self.solve_value_zwick_paterson_wrap()
+
+    def solve_strat(self):
+
+        return self.solve_strat_zwick_paterson()
 
     def visualise(self, target_path=None, strat=None, values=None):
 
