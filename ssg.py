@@ -166,3 +166,23 @@ class SimpleStochasticGame(Game):
 
         return save_loc
 
+    @staticmethod
+    def load_csv(target_path):
+        if os.path.isfile(target_path):
+            with open(target_path, "r") as file:
+                owner = file.readline().replace("\n","")
+                owner = owner.split(",")
+                owner = np.array([int(e) for e in owner])
+                edges = [file.readline().replace("\n","") for n in range(len(owner))]
+                edges = [e.split(",") for e in edges]
+                edges = np.array([[bool(f) for f in e] for e in edges])
+                avg = file.read().split("\n")
+                avg = [e.split(",") for e in avg]
+                avg = np.array([[float(f) if f!="" else float(0) for f in e] for e in avg])
+            return SimpleStochasticGame(owner, edges, avg, False)
+
+    def save_csv(self, target_path):
+        with open(target_path, "w") as file:
+            file.write(",".join([str(e) for e in self.owner])+"\n")
+            file.write("\n".join([",".join(["1" if f else "" for f in e]) for e in self.edges])+"\n")
+            file.write("\n".join([",".join([str(f) if f!=0 else "" for f in e]) for e in self.avg]))

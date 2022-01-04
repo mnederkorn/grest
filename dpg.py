@@ -45,7 +45,7 @@ class DiscountedPayoffGame(Game):
     @classmethod
     def generate(cls, n, p, w):
 
-        return cls(*super().generate(n, p, w), np.random.rand(1))
+        return cls(*super().generate(n, p, w), np.random.rand(1)[0])
 
     def to_ssg(self):
 
@@ -121,8 +121,6 @@ class DiscountedPayoffGame(Game):
                 break
 
         strat = np.where(owner, numba_argmin_axis1(np.where(edges!=mini, (1-discount)*edges+discount*cur, maxi)), numba_argmax_axis1(np.where(edges!=mini, (1-discount)*edges+discount*cur, mini)))
-
-        print(strat.dtype)
 
         return cur, strat
 
@@ -231,3 +229,23 @@ class DiscountedPayoffGame(Game):
         save_loc = view.render(filename=target_path, view=False, cleanup=True)
 
         return save_loc
+
+    @staticmethod
+    def load_csv(target_path):
+        if os.path.isfile(target_path):
+            with open(target_path, "r") as file:
+                owner = file.readline().replace("\n","")
+                owner = owner.split(",")
+                print(owner)
+                owner=np.array([True if (e=="1" or e=="True") else False for e in owner])
+                discount = float(file.readline())
+                edges = file.read().split("\n")
+                edges = [e.split(",") for e in edges]
+                edges = np.array([[int(f) if f else mini for f in e] for e in edges])
+            return DiscountedPayoffGame(owner, edges, discount)
+
+    def save_csv(self, target_path):
+        with open(target_path, "w") as file:
+            file.write(",".join(["1" if e else "0" for e in self.owner])+"\n")
+            file.write(str(self.discount)+"\n")
+            file.write("\n".join([",".join([str(f) if f!=mini else "" for f in e]) for e in self.edges]))

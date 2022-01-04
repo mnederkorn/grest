@@ -195,3 +195,24 @@ class ParityGame(Game):
         save_loc = view.render(filename=target_path, view=False, cleanup=True)
 
         return save_loc
+
+    @staticmethod
+    def load_csv(target_path):
+        if os.path.isfile(target_path):
+            with open(target_path, "r") as file:
+                owner = file.readline().replace("\n","")
+                owner = owner.split(",")
+                owner=np.array([True if (e=="1" or e=="True") else False for e in owner])
+                priorities = file.readline().replace("\n","")
+                priorities = priorities.split(",")
+                priorities=np.array([int(e) for e in priorities])
+                edges = file.read().split("\n")
+                edges = [e.split(",") for e in edges]
+                edges = np.array([[True if f=="1" else False for f in e] for e in edges])
+            return ParityGame(owner, edges, priorities)
+
+    def save_csv(self, target_path):
+        with open(target_path, "w") as file:
+            file.write(",".join(["1" if e else "0" for e in self.owner])+"\n")
+            file.write(",".join([str(e) for e in self.priorities])+"\n")
+            file.write("\n".join([",".join(["1" if f else "" for f in e]) for e in self.edges]))

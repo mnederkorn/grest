@@ -22,25 +22,19 @@ if __name__ == "__main__":
     # dpg = DiscountedPayoffGame.generate(n, p, w)
     # ssg = SimpleStochasticGame.generate(n, p)
 
-    n = int(8)
+    n = 4
+    p = 2/n
+    w = int(n**.5)
 
-    p = 2 / n
+    path = r"C:\ata\uni\master\grest\grest\test.csv"
 
-    w=int(n)
-    # w = int(log(n, 2))
+    pg = DiscountedPayoffGame.generate(n, p, w)
+    print(pg.solve_value())
+    print(pg.owner)
 
-    o, e, h = 0,0,0
 
-    for i in count(1):
+    pg.save_csv(path)
 
-        mpg = SimpleStochasticGame.generate(n, p)
-
-        o += np.count_nonzero(mpg.owner)
-        e += np.count_nonzero(mpg.edges!=mini)
-        if np.count_nonzero(mpg.owner==2)!=0:
-            h += np.sum(mpg.avg)/np.count_nonzero(mpg.owner==2)
-
-        print(o/i, e/i, h/i)
-
-        if not np.average(np.count_nonzero(mpg.edges, 1)):
-            exit()
+    pg=DiscountedPayoffGame.load_csv(path)
+    print(pg.solve_value())
+    print(pg.owner)

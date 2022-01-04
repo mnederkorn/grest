@@ -547,3 +547,20 @@ class EnergyGame(Game):
         save_loc = view.render(filename=target_path, view=False, cleanup=True)
 
         return save_loc
+
+    @staticmethod
+    def load_csv(target_path):
+        if os.path.isfile(target_path):
+            with open(target_path, "r") as file:
+                owner = file.readline().replace("\n","")
+                owner = owner.split(",")
+                owner=np.array([True if (e=="1" or e=="True") else False for e in owner])
+                edges = file.read().split("\n")
+                edges = [e.split(",") for e in edges]
+                edges = np.array([[int(f) if f else mini for f in e] for e in edges])
+            return EnergyGame(owner, edges)
+
+    def save_csv(self, target_path):
+        with open(target_path, "w") as file:
+            file.write(",".join(["1" if e else "0" for e in self.owner])+"\n")
+            file.write("\n".join([",".join([str(f) if f!=mini else "" for f in e]) for e in self.edges]))
