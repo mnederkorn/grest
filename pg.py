@@ -87,7 +87,13 @@ class ParityGame(Game):
 
     def solve_value_zielonka(self):
 
-        return zielonka(self.owner, self.edges, self.priorities)
+        prios_k = np.argsort(self.priorities)
+        steps = self.priorities[prios_k][1:]-self.priorities[prios_k][:-1]
+        tmp = self.priorities.copy()
+        for n in np.where(steps>=2)[0]:
+            tmp[prios_k[n+1:]]-=(steps[n]//2)*2
+
+        return zielonka(self.owner, self.edges, tmp)
 
     def solve_strat_zielonka(self):
 
@@ -124,11 +130,11 @@ class ParityGame(Game):
         prios_k = np.argsort(self.priorities)
         prios = self.priorities[prios_k]
         prios_even = prios%2==0
-        weight = np.zeros(len(self.owner), dtype=int)
+        weight = np.ones(len(self.owner), dtype=int)
 
         for i,pr in enumerate(prios):
             if pr%2==0:
-                weight[i]=np.sum(weight[:i][~prios_even[:i]])+1
+                weight[i]=np.sum(weight[:i][~prios_even[:i]])
             else:
                 weight[i]=np.sum(weight[:i][prios_even[:i]])+1
 
@@ -143,13 +149,29 @@ class ParityGame(Game):
 
     def solve_value_mpg(self):
 
-        mpg = self.to_mpg()
+        prios_k = np.argsort(self.priorities)
+        steps = self.priorities[prios_k][1:]-self.priorities[prios_k][:-1]
+        tmp = self.priorities.copy()
+        for n in np.where(steps>=2)[0]:
+            tmp[prios_k[n+1:]]-=(steps[n]//2)*2
 
-        return mpg.solve_value()>=0
+        g = ParityGame(self.owner, self.edges, tmp)
+
+        mpg = g.to_mpg()
+
+        return mpg.solve_value()<0
 
     def solve_strat_mpg(self):
 
-        mpg = self.to_mpg()
+        prios_k = np.argsort(self.priorities)
+        steps = self.priorities[prios_k][1:]-self.priorities[prios_k][:-1]
+        tmp = self.priorities.copy()
+        for n in np.where(steps>=2)[0]:
+            tmp[prios_k[n+1:]]-=(steps[n]//2)*2
+
+        g = ParityGame(self.owner, self.edges, tmp)
+
+        mpg = g.to_mpg()
 
         return mpg.solve_strat()
 

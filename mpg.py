@@ -71,7 +71,43 @@ def Q_sub_sup(n, mid):
 
     return np.array([l1[ar1], r[ar1]], dtype=int),np.array([l2[ar2], r[ar2]], dtype=int)
 
-def solve_value_eg_alg2(owner, edges, lower, upper):
+# def solve_value_eg_alg2(owner, edges, lower, upper):
+
+#     mini = np.iinfo(edges.dtype).min
+
+#     a1, a2 = Q_sub_sup(len(owner), (lower+upper)/2)
+
+#     e1 = np.where(edges != mini, (a1[1]*edges)-a1[0], mini)
+#     e2 = np.where(edges != mini, (-a1[1]*edges)+a1[0], mini)
+#     e3 = np.where(edges != mini, (a2[1]*edges)-a2[0], mini)
+#     e4 = np.where(edges != mini, (-a2[1]*edges)+a2[0], mini)
+    
+#     f1, s1 = EnergyGame(owner, e1).solve_both()
+#     f2, s2 = EnergyGame(~owner, e2).solve_both()
+#     f3, s3 = EnergyGame(owner, e3).solve_both()
+#     f4, s4 = EnergyGame(~owner, e4).solve_both()
+
+#     v = np.empty(len(owner), dtype=float)
+#     s = np.full(len(owner), -1, dtype=int)
+
+#     v = np.where((f1!=-1)&(f2!=-1), a1[0]/a1[1], v)
+#     v = np.where((f3!=-1)&(f4!=-1), a2[0]/a2[1], v)
+#     s = np.where((f1!=-1)&(f2!=-1), np.where(s1!=-1, s1, s2), s)
+#     s = np.where((f3!=-1)&(f4!=-1), np.where(s1!=-1, s3, s4), s)
+
+#     v1 = np.where(f1==-1)[0]
+#     v2 = np.where(f4==-1)[0]
+
+#     if len(v1)!=0:
+#         v[v1], st = solve_value_eg_alg2(owner[v1], edges[np.ix_(v1,v1)], lower, a1[0]/a1[1])
+#         s[v1] = v1[st]
+#     if len(v2)!=0:
+#         v[v2], st = solve_value_eg_alg2(owner[v2], edges[np.ix_(v2,v2)], a2[0]/a2[1], upper)
+#         s[v2] = v2[st]
+
+#     return v, s
+
+def solve_value_eg_alg(owner, edges, lower, upper):
 
     mini = np.iinfo(edges.dtype).min
 
@@ -79,30 +115,24 @@ def solve_value_eg_alg2(owner, edges, lower, upper):
 
     e1 = np.where(edges != mini, (a1[1]*edges)-a1[0], mini)
     e2 = np.where(edges != mini, (-a1[1]*edges)+a1[0], mini)
-    e3 = np.where(edges != mini, (a2[1]*edges)-a2[0], mini)
-    e4 = np.where(edges != mini, (-a2[1]*edges)+a2[0], mini)
     
     f1, s1 = EnergyGame(owner, e1).solve_both()
     f2, s2 = EnergyGame(~owner, e2).solve_both()
-    f3, s3 = EnergyGame(owner, e3).solve_both()
-    f4, s4 = EnergyGame(~owner, e4).solve_both()
 
     v = np.empty(len(owner), dtype=float)
     s = np.full(len(owner), -1, dtype=int)
 
     v = np.where((f1!=-1)&(f2!=-1), a1[0]/a1[1], v)
-    v = np.where((f3!=-1)&(f4!=-1), a2[0]/a2[1], v)
     s = np.where((f1!=-1)&(f2!=-1), np.where(s1!=-1, s1, s2), s)
-    s = np.where((f3!=-1)&(f4!=-1), np.where(s1!=-1, s3, s4), s)
 
     v1 = np.where(f1==-1)[0]
-    v2 = np.where(f4==-1)[0]
+    v2 = np.where(f2==-1)[0]
 
     if len(v1)!=0:
-        v[v1], st = solve_value_eg_alg2(owner[v1], edges[np.ix_(v1,v1)], lower, a1[0]/a1[1])
+        v[v1], st = solve_value_eg_alg2_2(owner[v1], edges[np.ix_(v1,v1)], lower, a1[0]/a1[1])
         s[v1] = v1[st]
     if len(v2)!=0:
-        v[v2], st = solve_value_eg_alg2(owner[v2], edges[np.ix_(v2,v2)], a2[0]/a2[1], upper)
+        v[v2], st = solve_value_eg_alg2_2(owner[v2], edges[np.ix_(v2,v2)], a2[0]/a2[1], upper)
         s[v2] = v2[st]
 
     return v, s
@@ -227,7 +257,7 @@ class MeanPayoffGame(Game):
 
         W = np.max(np.abs(np.where(self.edges != mini, self.edges, 0)))
 
-        return solve_value_eg_alg2(self.owner, self.edges, -W, W)
+        return solve_value_eg_alg(self.owner, self.edges, -W, W)
 
     def solve_value(self, strat=None):
 

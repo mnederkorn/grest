@@ -6,6 +6,7 @@ from graphviz import Digraph
 from tempfile import gettempdir
 import copy
 from numba import jit
+from math import nextafter
 
 @jit(nopython=True, cache=True)
 def numba_nanmin_axis1(x):
@@ -104,7 +105,9 @@ class DiscountedPayoffGame(Game):
         mini = np.iinfo(edges.dtype).min
         maxi = np.iinfo(edges.dtype).max
 
-        cur = np.zeros(len(owner))
+        W = np.float64(np.max(np.abs(np.where(edges!=mini, edges, 0))))
+
+        cur = np.full(len(owner), -W)
 
         while True:
 
@@ -177,6 +180,12 @@ class DiscountedPayoffGame(Game):
 
             status = solver.Solve()
 
+            if status != 0:
+                return None
+                # print(status, self.discount)
+                # # self.save()
+                # exit()
+
             if not player:
                 strat = np.where(self.owner, strat, np.argmax(((1-self.discount)*self.edges)+(self.discount*(np.array([v_n.solution_value() for v_n in v]))), 1))
             else:
@@ -236,7 +245,6 @@ class DiscountedPayoffGame(Game):
             with open(target_path, "r") as file:
                 owner = file.readline().replace("\n","")
                 owner = owner.split(",")
-                print(owner)
                 owner=np.array([True if (e=="1" or e=="True") else False for e in owner])
                 discount = float(file.readline())
                 edges = file.read().split("\n")
