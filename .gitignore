@@ -7,6 +7,7 @@ __pycache__
 !graphs/EnergyGame_2021-12-19-01-54-53.bin
 !graphs/EnergyGame_2021-12-19-16-32-02.bin
 !graphs/EnergyGame_2021-12-19-19-39-53.bin
+!graphs/DiscountedPayoffGame_2022-01-24-23-33-37.bin
 mpg_n.py
 dpg_n.py
 plot.py
