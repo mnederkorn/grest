@@ -46,7 +46,7 @@ class SimpleStochasticGame(Game):
     # strats for avg/rng vertices as -1 
     def solve_both_kleene_wrap(self):
 
-        value = self.solve_value_kleene(self.owner, self.edges, self.avg, self.stopping)
+        value = self.solve_both_kleene(self.owner, self.edges, self.avg, self.stopping)
 
         strat = np.where(self.owner==2, -1, np.where(self.owner==0, np.nanargmax(np.where(self.edges, value, np.nan), 1), np.nanargmin(np.where(self.edges, value, np.nan), 1)))
 
@@ -54,7 +54,7 @@ class SimpleStochasticGame(Game):
 
     @staticmethod
     @jit(nopython=True, cache=True)
-    def solve_value_kleene(owner, edges, avg_chance, stopping):
+    def solve_both_kleene(owner, edges, avg_chance, stopping):
 
         cur = np.hstack((np.zeros(len(owner)), np.array([0]), np.array([1])))
 
@@ -147,15 +147,15 @@ class SimpleStochasticGame(Game):
             for i in np.where(strat!=-1)[0]:
                 edges[i,strat[i]]=True
 
-            return SimpleStochasticGame(self.owner, edges, self.avg, self.stopping).solve_both_kleene()[0]
+            return SimpleStochasticGame(self.owner, edges, self.avg, self.stopping).solve_both_kleene_wrap()[0]
 
         else:
 
-            return self.solve_both_kleene()[0]
+            return self.solve_both_kleene_wrap()[0]
 
     def solve_strat(self):
 
-        return self.solve_both_kleene()[1]
+        return self.solve_both_kleene_wrap()[1]
 
     def visualise(self, target_path=None, strat=None, values=None):
 

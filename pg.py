@@ -125,8 +125,6 @@ class ParityGame(Game):
 
     def to_mpg(self):
 
-        mini = np.iinfo(np.int32).min
-
         prios_k = np.argsort(self.priorities)
         prios = self.priorities[prios_k]
         prios_even = prios%2==0
@@ -147,7 +145,7 @@ class ParityGame(Game):
 
         return MeanPayoffGame(self.owner, edges)
 
-    def solve_value_mpg(self):
+    def solve_both_mpg(self, player):
 
         prios_k = np.argsort(self.priorities)
         steps = self.priorities[prios_k][1:]-self.priorities[prios_k][:-1]
@@ -159,7 +157,11 @@ class ParityGame(Game):
 
         mpg = g.to_mpg()
 
-        return mpg.solve_value()<0
+        x = mpg.solve_both_dpg(player)
+
+        v,s = x
+
+        return v<0, s
 
     def solve_strat_mpg(self):
 

@@ -1,11 +1,9 @@
 from game import *
-# from game import printm
 from pg import *
 from mpg import *
 from dpg import *
 from eg import *
 from ssg import *
-from ssg_n import *
 from time import time
 import sys
 import copy
@@ -15,37 +13,56 @@ from itertools import count
 import winsound
 import math
 
+n = 8
+p = 2/n
+w = n
+
+fp = r"C:\ata\uni\master\grest\grest\graphs"
+
 # pg = ParityGame.generate(n, p, w)
+# print(pg.solve_value_zielonka())
+# print(pg.solve_strat_zielonka())
+# print(pg.solve_both_mpg(0))
+# print(pg.solve_strat_mpg())
+# print(x:=pg.solve_strat())
+# print(pg.solve_value())
+# print(pg.solve_value(x))
+
 # mpg = MeanPayoffGame.generate(n, p, w)
+# print(mpg.solve_value_zwick_paterson_wrap())
+# print(mpg.solve_strat_zwick_paterson())
+# print(mpg.solve_both_dpg(0))
+# print(mpg.solve_both_eg())
+# print(x:=mpg.solve_strat())
+# print(mpg.solve_value())
+# print(mpg.solve_value(x))
+
 # eg = EnergyGame.generate(n, p, w)
+# print(eg.solve_both_bcdgr_wrap())
+# print(eg.solve_value_kleene())
+# print(eg.solve_strat_kleene())
+# print(eg.solve_both_strat_iter_below())
+# print(eg.solve_both_strat_iter_above())
+# print(x:=eg.solve_strat())
+# print(eg.solve_value())
+# print(eg.solve_value(x))
+
+# # infeasible example
+# # dpg = Game.load(os.path.join(fp,r"DiscountedPayoffGame_2022-01-24-23-33-37.bin"))
 # dpg = DiscountedPayoffGame.generate(n, p, w)
+# print(dpg.solve_both_ssg())
+# print(dpg.solve_both_kleene_wrap())
+# print(dpg.solve_both_strat_iter(0))
+# print(x:=dpg.solve_strat())
+# print(dpg.solve_value())
+# print(dpg.solve_value(x))
+
 # ssg = SimpleStochasticGame.generate(n, p)
+# print(ssg.solve_both_kleene_wrap())
+# print(DiscountedPayoffGame.generate(n, p, w).to_ssg()[0].solve_both_strat_iter(0))
+# print(x:=ssg.solve_strat())
+# print(ssg.solve_value())
+# print(ssg.solve_value(x))
 
-TIMES = 100
-n = [2**i for i in range(2, 7)]
-p = [lambda x: 1/x, lambda x: log(x,2)/x, lambda x: .5]
-pd = {p[0]:"1/x",p[1]:"log2/x",p[2]:".5"}
-w = [lambda x: int(log(x,2)),lambda x: int(x),lambda x: int(int(log(x,2))*x)]
-wd = {w[0]:"log2",w[1]:"x",w[2]:"x*log2"}
 
-path = r"C:\ata\uni\master\grest\grest\tests"
 
-g = EnergyGame.generate(8, .5, 8)
-g.solve_strat_kleene()
-
-with open(os.path.join(path,"eg_strat_kleene_100.dat"), "w") as file:
-    for a in n:
-        for b in p:
-            for c in w:
-                tt=0
-                for n in range(TIMES):
-                    print(a, pd[b], n,tt)
-                    g = EnergyGame.generate(a, b(a), c(a))
-                    t=time()
-                    x=g.solve_strat_kleene()
-                    tt+=time()-t
-                file.write(",".join((str(x) for x in (a, pd[b], wd[c], tt)))+"\n")
-                file.flush()
-
-for _ in range(10):
-    winsound.Beep(220, 50)

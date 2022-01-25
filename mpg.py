@@ -109,8 +109,6 @@ def Q_sub_sup(n, mid):
 
 def solve_value_eg_alg(owner, edges, lower, upper):
 
-    mini = np.iinfo(edges.dtype).min
-
     a1, a2 = Q_sub_sup(len(owner), (lower+upper)/2)
 
     e1 = np.where(edges != mini, (a1[1]*edges)-a1[0], mini)
@@ -129,10 +127,10 @@ def solve_value_eg_alg(owner, edges, lower, upper):
     v2 = np.where(f2==-1)[0]
 
     if len(v1)!=0:
-        v[v1], st = solve_value_eg_alg2_2(owner[v1], edges[np.ix_(v1,v1)], lower, a1[0]/a1[1])
+        v[v1], st = solve_value_eg_alg(owner[v1], edges[np.ix_(v1,v1)], lower, a1[0]/a1[1])
         s[v1] = v1[st]
     if len(v2)!=0:
-        v[v2], st = solve_value_eg_alg2_2(owner[v2], edges[np.ix_(v2,v2)], a2[0]/a2[1], upper)
+        v[v2], st = solve_value_eg_alg(owner[v2], edges[np.ix_(v2,v2)], a2[0]/a2[1], upper)
         s[v2] = v2[st]
 
     return v, s
@@ -155,8 +153,6 @@ class MeanPayoffGame(Game):
     @staticmethod
     @jit(nopython=True, cache=True)
     def solve_value_zwick_paterson(owner, edges):
-
-        mini = np.iinfo(edges.dtype).min
 
         W = np.max(np.abs(np.where(edges!=mini, edges, 0)))
 
@@ -198,8 +194,6 @@ class MeanPayoffGame(Game):
 
     def solve_strat_zwick_paterson(self):
 
-        mini = np.iinfo(self.edges.dtype).min
-
         z = self.solve_value_zwick_paterson_wrap()
 
         ret = np.full(len(self.owner), -1, dtype=int)
@@ -229,31 +223,23 @@ class MeanPayoffGame(Game):
 
     def to_dpg(self):
 
-        mini = np.iinfo(self.edges.dtype).min
-
         W = np.max(np.abs(np.where(self.edges != mini, self.edges, 0)))
 
         discount = 1-(1/(4*(len(self.owner)**3)*W))
 
         return DiscountedPayoffGame(self.owner, self.edges, discount)
 
-    def solve_value_dpg(self):
+    def solve_both_dpg(self, player):
 
         dpg = self.to_dpg()
 
-        v = dpg.solve_value()
+        x = dpg.solve_both_strat_iter(player)
 
-        return trunc(len(self.owner), v)
+        v, s = x
 
-    def solve_strat_dpg(self):
-
-        dpg = self.to_dpg()
-
-        return dpg.solve_strat()
+        return trunc(len(self.owner), v), s
 
     def solve_both_eg(self):
-
-        mini = np.iinfo(self.edges.dtype).min
 
         W = np.max(np.abs(np.where(self.edges != mini, self.edges, 0)))
 
@@ -262,8 +248,6 @@ class MeanPayoffGame(Game):
     def solve_value(self, strat=None):
 
         if type(strat) != type(None):
-
-            mini = np.iinfo(self.edges.dtype).min
 
             edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
 
@@ -296,8 +280,6 @@ class MeanPayoffGame(Game):
             else:
                 label = f"<v<sub>{i}</sub>>"
             view.node(f"{i}", label=label, shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
-        mini = np.iinfo(self.edges.dtype).min
-        mini = np.iinfo(self.edges.dtype).min
         idx = np.where(self.edges!=mini)
         for s,t in zip(idx[0],idx[1]):
             view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour[self.owner[s]][strat[s]==t], color=colour[self.owner[s]][strat[s]==t])

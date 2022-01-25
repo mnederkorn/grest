@@ -57,12 +57,28 @@ def numba_any_axis1(x):
         out = np.logical_or(out, x[:, i])
     return out
 
+@jit(nopython=True, cache=True)
+def numba_min_(x):
+    cand = np.where(x!=-1)[0]
+    if len(cand)!=0:
+        y = cand[np.argmin(x[cand])]
+        return x[y], y
+    else:
+        return -1, 0
+
+@jit(nopython=True, cache=True)
+def numba_max_(x):
+    y = np.where(x==-1)[0]
+    if len(y)>0:
+        return x[y[0]], y[0]
+    else:
+        cand = np.where(x!=-1)[0]
+        y = cand[np.argmax(x[cand])]
+        return x[y], y
+
 # BellmanFord
 @jit(nopython=True, cache=True)
 def find_negative_cycle_nodes(edges):
-
-    mini = np.iinfo(edges.dtype).min
-    maxi = np.iinfo(edges.dtype).max
 
     edges_src = np.vstack((edges,np.zeros((1,edges.shape[1]), dtype=edges.dtype)))
     edges_src = np.hstack((edges_src,np.full((edges_src.shape[0],1), mini, dtype=edges.dtype)))
@@ -111,8 +127,6 @@ def find_negative_cycle_nodes(edges):
 # BellmanFord finds (at least) one negative cycle but not necessarily all so we need to iterate
 @jit(nopython=True, cache=True)
 def find_all_negative_cycle_nodes(edges):
-
-    mini = np.iinfo(edges.dtype).min
 
     neg_strat = np.full(len(edges), -1, dtype=np.int64)
 
@@ -165,9 +179,6 @@ class EnergyGame(Game):
 
         p0 = np.where(owner==False)[0]
         p1 = np.where(owner==True)[0]
-
-        mini = np.iinfo(edges.dtype).min
-        maxi = np.iinfo(edges.dtype).max
 
         # l = set()
         l = np.full(len(owner), False)
@@ -239,9 +250,6 @@ class EnergyGame(Game):
 
     def solve_value_kleene(self):
 
-        mini = np.iinfo(self.edges.dtype).min
-        maxi = np.iinfo(self.edges.dtype).max
-
         # M_(G^gamma)
         max_cycle_cost = -np.sum(np.min(np.clip(self.edges, mini, 0)*(self.edges!=mini), 1))
 
@@ -262,13 +270,9 @@ class EnergyGame(Game):
             f = np.where(edges_weight==maxi, -1, edges_weight)
 
             if np.all(f==old):
-                break
-
-        return f
+                return f
 
     def solve_strat_kleene(self):
-
-        mini = np.iinfo(self.edges.dtype).min
 
         z = self.solve_value_kleene()
 
@@ -301,9 +305,6 @@ class EnergyGame(Game):
 
         p0 = np.where(self.owner==False)[0]
         p1 = np.where(self.owner==True)[0]
-
-        mini = np.iinfo(self.edges.dtype).min
-        maxi = np.iinfo(self.edges.dtype).max
 
         nW = len(self.owner)*np.max(np.abs(self.edges[np.where(self.edges!=mini)]))
 
@@ -375,9 +376,6 @@ class EnergyGame(Game):
 
         p0 = np.where(self.owner==False)[0]
         p1 = np.where(self.owner==True)[0]
-
-        mini = np.iinfo(self.edges.dtype).min
-        maxi = np.iinfo(self.edges.dtype).max
 
         # M_(G^gamma)
         max_cycle_cost = -np.sum(np.min(np.clip(self.edges, mini, 0)*(self.edges!=mini), 1))
@@ -493,8 +491,6 @@ class EnergyGame(Game):
 
         if type(strat) != type(None):
 
-            mini = np.iinfo(self.edges.dtype).min
-
             edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
 
             for i in np.where(strat!=-1)[0]:
@@ -509,8 +505,6 @@ class EnergyGame(Game):
     def solve_both(self, strat=None):
 
         if type(strat) != type(None):
-
-            mini = np.iinfo(self.edges.dtype).min
 
             edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
 
@@ -527,7 +521,7 @@ class EnergyGame(Game):
 
     def solve_strat(self):
 
-        return self.solve_strat_kleene()
+        return self.solve_both_bcdgr_wrap()[1]
 
     def visualise(self, target_path=None, strat=None, values=None):
 
@@ -545,7 +539,6 @@ class EnergyGame(Game):
             else:
                 label = f"<v<sub>{i}</sub>>"
             view.node(f"{i}", label=label, shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
-        mini = np.iinfo(self.edges.dtype).min
         idx = np.where(self.edges!=mini)
         for s,t in zip(idx[0],idx[1]):
             view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour[self.owner[s]][strat[s]==t], color=colour[self.owner[s]][strat[s]==t])
