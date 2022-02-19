@@ -1,13 +1,13 @@
 from game import *
 import numpy as np
-from ortools.linear_solver import pywraplp
 from ssg import SimpleStochasticGame
 from graphviz import Digraph
 from tempfile import gettempdir
 import copy
 from numba import jit
-from math import nextafter
-from itertools import count
+import pulp
+from ortools.linear_solver import pywraplp
+
 
 @jit(nopython=True, cache=True)
 def numba_nanmin_axis1(x):
@@ -16,12 +16,14 @@ def numba_nanmin_axis1(x):
         out[i] = np.nanmin(x[i])
     return out
 
+
 @jit(nopython=True, cache=True)
 def numba_nanmax_axis1(x):
     out = np.empty(x.shape[0], dtype=x.dtype)
     for i in range(x.shape[0]):
         out[i] = np.nanmax(x[i])
     return out
+
 
 @jit(nopython=True, cache=True)
 def numba_argmax_axis1(x):
@@ -30,6 +32,7 @@ def numba_argmax_axis1(x):
         out[i] = np.argmax(x[i])
     return out
 
+
 @jit(nopython=True, cache=True)
 def numba_argmin_axis1(x):
     out = np.empty(x.shape[0], dtype=np.int32)
@@ -37,23 +40,26 @@ def numba_argmin_axis1(x):
         out[i] = np.argmin(x[i])
     return out
 
-class DiscountedPayoffGame(Game):
 
+class DiscountedPayoffGame(Game):
     def __init__(self, owner, edges, discount):
 
         super().__init__(owner, edges)
         self.discount = discount
 
     @classmethod
-    def generate(cls, n, p, w):
+    def generate(cls, n, p, w, d=None):
 
-        return cls(*super().generate(n, p, w), np.random.rand(1)[0])
+        if d == None:
+            return cls(*super().generate(n, p, w), np.random.rand(1)[0])
+        else:
+            return cls(*super().generate(n, p, w), d)
 
     def to_ssg(self):
 
-        W = np.max(np.abs(np.where(self.edges!=mini, self.edges, 0)))
+        W = np.max((np.max(np.abs(np.where(self.edges != mini, self.edges, 0))), 1))
 
-        edges = np.where(self.edges != mini, self.edges+W, self.edges)
+        edges = np.where(self.edges != mini, self.edges + W, self.edges)
 
         f3 = np.count_nonzero(self.edges != mini)
 
@@ -61,24 +67,24 @@ class DiscountedPayoffGame(Game):
 
         f3pos = np.where(self.edges != mini)
 
-        ssg_edges = np.full((vertices,vertices+2), False)
+        ssg_edges = np.full((vertices, vertices + 2), False)
 
         owner = np.hstack((self.owner, np.full(f3, 2, dtype=np.uint8)))
 
-        avg_chance = np.zeros((f3, vertices+2))
+        avg_chance = np.zeros((f3, vertices + 2))
 
         strat_map = np.zeros(f3, dtype=int)
 
-        for i,edge in enumerate(zip(f3pos[0],f3pos[1])):
-            ssg_edges[edge[0], i+len(self.owner)] = True
-            ssg_edges[i+len(self.owner), edge[1]] = True
-            strat_map[i]=edge[1]
-            ssg_edges[i+len(self.owner), -1] = True
-            ssg_edges[i+len(self.owner), -2] = True
+        for i, edge in enumerate(zip(f3pos[0], f3pos[1])):
+            ssg_edges[edge[0], i + len(self.owner)] = True
+            ssg_edges[i + len(self.owner), edge[1]] = True
+            strat_map[i] = edge[1]
+            ssg_edges[i + len(self.owner), -1] = True
+            ssg_edges[i + len(self.owner), -2] = True
             avg_chance[i, edge[1]] = self.discount
-            avg_chance[i, -2] = (1-self.discount)*(1-(edges[edge]/(2*W)))
-            avg_chance[i, -1] = (1-self.discount)*(edges[edge]/(2*W))
-            
+            avg_chance[i, -2] = (1 - self.discount) * (1 - (edges[edge] / (2 * W)))
+            avg_chance[i, -1] = (1 - self.discount) * (edges[edge] / (2 * W))
+
         return SimpleStochasticGame(owner, ssg_edges, avg_chance, True), strat_map, W
 
     def solve_both_ssg(self):
@@ -87,9 +93,9 @@ class DiscountedPayoffGame(Game):
 
         v, s = ssg.solve_both_kleene_wrap()
 
-        v = (v[:len(self.owner)]*2*W)-W
+        v = (v[: len(self.owner)] * 2 * W) - W
 
-        s = smap[(s-len(self.owner))[:len(self.owner)]]
+        s = smap[(s - len(self.owner))[: len(self.owner)]]
 
         return v, s
 
@@ -101,7 +107,7 @@ class DiscountedPayoffGame(Game):
     @jit(nopython=True, cache=True)
     def solve_both_kleene(owner, edges, discount):
 
-        W = np.float64(np.max(np.abs(np.where(edges!=mini, edges, 0))))
+        W = np.float64(np.max(np.abs(np.where(edges != mini, edges, 0))))
 
         cur = np.full(len(owner), -W)
 
@@ -109,31 +115,55 @@ class DiscountedPayoffGame(Game):
 
             old = cur.copy()
 
-            edges_weight = np.where(edges != mini, ((1-discount)*edges)+discount*cur, np.nan)
+            edges_weight = np.where(
+                edges != mini, ((1 - discount) * edges) + discount * cur, np.nan
+            )
 
-            cur = np.where(owner, numba_nanmin_axis1(edges_weight), numba_nanmax_axis1(edges_weight))
+            cur = np.where(
+                owner,
+                numba_nanmin_axis1(edges_weight),
+                numba_nanmax_axis1(edges_weight),
+            )
 
-            max_err = np.amax(np.abs(cur-old))
+            max_err = np.amax(np.abs(cur - old))
 
             # iterate until max float precision is hit
-            if max_err <1e-14:
+            if max_err < 1e-14:
                 break
 
-        strat = np.where(owner, numba_argmin_axis1(np.where(edges!=mini, (1-discount)*edges+discount*cur, maxi)), numba_argmax_axis1(np.where(edges!=mini, (1-discount)*edges+discount*cur, mini)))
+        strat = np.where(
+            owner,
+            numba_argmin_axis1(
+                np.where(edges != mini, (1 - discount) * edges + discount * cur, maxi)
+            ),
+            numba_argmax_axis1(
+                np.where(edges != mini, (1 - discount) * edges + discount * cur, mini)
+            ),
+        )
 
         return cur, strat
 
     def solve_both_strat_iter(self, player):
 
-        p0 = np.where(self.owner==False)[0]
-        p1 = np.where(self.owner==True)[0]
+        p0 = np.where(self.owner == False)[0]
+        p1 = np.where(self.owner == True)[0]
 
         if not player:
-            strat = np.where(self.owner, -1, np.apply_along_axis(lambda x: np.random.choice(np.where(x!=mini)[0]), 1, self.edges))
+            strat = np.where(
+                self.owner,
+                -1,
+                np.apply_along_axis(
+                    lambda x: np.random.choice(np.where(x != mini)[0]), 1, self.edges
+                ),
+            )
         else:
-            strat = np.where(self.owner, np.apply_along_axis(lambda x: np.random.choice(np.where(x!=mini)[0]), 1, self.edges), -1)
-
-        strat = np.array([-1,  4,  1,  0,  3,  2])
+            strat = np.where(
+                self.owner,
+                np.apply_along_axis(
+                    lambda x: np.random.choice(np.where(x != mini)[0]), 1, self.edges
+                ),
+                -1,
+            )
 
         strat_hist = []
 
@@ -141,77 +171,108 @@ class DiscountedPayoffGame(Game):
 
             strat_hist.append(hash(strat.tobytes()))
 
-            for y in count(1):
+            self.edges = np.where(self.edges != mini, self.edges, mini)
 
-                self.edges = np.where(self.edges!=mini, self.edges*y, mini)
+            weights = self.edges[np.where(self.edges != mini)]
+            W = max(abs(np.amin(weights)), abs(np.amax(weights)))
 
-                weights = self.edges[np.where(self.edges!=mini)]
-                W = max(abs(np.amin(weights)),abs(np.amax(weights)))
+            solver = pywraplp.Solver.CreateSolver("GLOP")
 
-                solver = pywraplp.Solver.CreateSolver('GLOP')
-
-                v = [solver.NumVar(float(-W), float(W), str(x)) for x in range(len(self.owner))]
-
-                if not player:
-                    for s,p in enumerate(self.owner):
-                        if not p:
-                            solver.Add(v[s] == (1-float(self.discount))*float(self.edges[s,strat[s]])+float(self.discount)*v[strat[s]])
-                            print(p, "eq", s, strat[s], self.edges[s,strat[s]])
-                        else:
-                            for t in np.where(self.edges[s]!=mini)[0]:
-                                solver.Add(v[s] <= (1-float(self.discount))*float(self.edges[s,t])+float(self.discount)*v[t])
-                                print(p, "leq", s, t, self.edges[s,t])
-                else:
-                    for s,p in enumerate(self.owner):
-                        if p:
-                            solver.Add(v[s] == (1-float(self.discount))*float(self.edges[s,strat[s]])+float(self.discount)*v[strat[s]])
-                            print(p, "eq", s, strat[s], self.edges[s,strat[s]])
-                        else:
-                            for t in np.where(self.edges[s]!=mini)[0]:
-                                solver.Add(v[s] >= (1-float(self.discount))*float(self.edges[s,t])+float(self.discount)*v[t])
-                                print(p, "leq", s, t, self.edges[s,t])
-
-                obj_func = v[0]
-
-                for v_n in v[1:]:
-                    obj_func+=v_n
-
-                if not player:
-                    solver.Maximize(obj_func)
-                else:
-                    solver.Minimize(obj_func)
-
-                status = solver.Solve()
-
-                if status == 0:
-                    break
-                elif status == 4:
-                    # rarely, glop returns with status 4 which is supposedly reserved for "abnormal" LPs
-                    # this is however also returned for some unknown reason for cases that aren't "abnormal" to their definition
-                    # adjusting some paramter like self.edges*y (and then later [v_n.solution_value() for v_n in v])/y) here solves this issue for some reason
-                    # seems to be glop bug, maybe some float colision
-                    continue
-                elif status != 0:
-                    # status 2 seems to happen rarely if the linear solver requires floating point precision that exceeds ieee 754 standard
-                    raise Exception("Cloud not solve",status)
+            v = [
+                solver.NumVar(float(-W), float(W), str(x))
+                for x in range(len(self.owner))
+            ]
 
             if not player:
-                strat = np.where(self.owner, strat, np.argmax(((1-self.discount)*self.edges)+(self.discount*(np.array([v_n.solution_value() for v_n in v])/y)), 1))
+                for s, p in enumerate(self.owner):
+                    if not p:
+                        solver.Add(
+                            v[s]
+                            == (1 - float(self.discount))
+                            * float(self.edges[s, strat[s]])
+                            + float(self.discount) * v[strat[s]]
+                        )
+                    else:
+                        for t in np.where(self.edges[s] != mini)[0]:
+                            solver.Add(
+                                v[s]
+                                <= (1 - float(self.discount)) * float(self.edges[s, t])
+                                + float(self.discount) * v[t]
+                            )
             else:
-                strat = np.where(self.owner, np.argmin(((1-self.discount)*np.where(self.edges==mini,maxi,self.edges))+(self.discount*(np.array([v_n.solution_value() for v_n in v])/y)), 1), strat)
+                for s, p in enumerate(self.owner):
+                    if p:
+                        solver.Add(
+                            v[s]
+                            == (1 - float(self.discount))
+                            * float(self.edges[s, strat[s]])
+                            + float(self.discount) * v[strat[s]]
+                        )
+                    else:
+                        for t in np.where(self.edges[s] != mini)[0]:
+                            solver.Add(
+                                v[s]
+                                >= (1 - float(self.discount)) * float(self.edges[s, t])
+                                + float(self.discount) * v[t]
+                            )
 
-        return np.array([v_n.solution_value() for v_n in v]),strat
+            obj_func = v[0]
+            for v_n in v[1:]:
+                obj_func += v_n
+            if not player:
+                solver.Maximize(obj_func)
+            else:
+                solver.Minimize(obj_func)
+            status = solver.Solve()
+
+            if status != 0:
+                # status 2 seems to happen rarely if the linear solver requires floating point precision that exceeds ieee 754 standard
+                raise Exception("Could not solve", status)
+
+            if not player:
+                strat = np.where(
+                    self.owner,
+                    strat,
+                    np.argmax(
+                        ((1 - self.discount) * self.edges)
+                        + (
+                            self.discount
+                            * (np.array([v_n.solution_value() for v_n in v]))
+                        ),
+                        1,
+                    ),
+                )
+            else:
+                strat = np.where(
+                    self.owner,
+                    np.argmin(
+                        (
+                            (1 - self.discount)
+                            * np.where(self.edges == mini, maxi, self.edges)
+                        )
+                        + (
+                            self.discount
+                            * (np.array([v_n.solution_value() for v_n in v]))
+                        ),
+                        1,
+                    ),
+                    strat,
+                )
+
+        return np.array([v_n.solution_value() for v_n in v]), strat
 
     def solve_value(self, strat=None):
 
         if type(strat) != type(None):
 
-            edges = np.where((strat==-1).reshape(-1,1), self.edges, mini)
+            edges = np.where((strat == -1).reshape(-1, 1), self.edges, mini)
 
-            for i in np.where(strat!=-1)[0]:
-                edges[i,strat[i]]=self.edges[i,strat[i]]
+            for i in np.where(strat != -1)[0]:
+                edges[i, strat[i]] = self.edges[i, strat[i]]
 
-            return DiscountedPayoffGame(self.owner, edges, self.discount).solve_both_kleene_wrap()[0]
+            return DiscountedPayoffGame(
+                self.owner, edges, self.discount
+            ).solve_both_kleene_wrap()[0]
 
         else:
 
@@ -219,28 +280,43 @@ class DiscountedPayoffGame(Game):
 
     def solve_strat(self):
 
-            return self.solve_both_kleene_wrap()[1]
+        return self.solve_both_kleene_wrap()[1]
 
     def visualise(self, target_path=None, strat=None, values=None):
 
         if type(strat) == type(None):
-            strat = np.full(len(self.owner),-1)
+            strat = np.full(len(self.owner), -1)
 
         if target_path == None:
-            target_path = os.path.join(gettempdir(), f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}")
+            target_path = os.path.join(
+                gettempdir(),
+                f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}",
+            )
 
         view = Digraph(format="png")
         view.attr(bgcolor="#f0f0f0")
-        for i,owner in enumerate(self.owner):
+        for i, owner in enumerate(self.owner):
             if type(values) != type(None):
                 label = f"<v(v<sub>{i}</sub>)={float(values[i]):.2f}>"
             else:
                 label = f"<v<sub>{i}</sub>>"
-            view.node(f"{i}", label=label, shape=shape[owner], fontcolor=colour[owner][strat[i]!=-1], color=colour[owner][strat[i]!=-1])
-        idx = np.where(self.edges!=mini)
-        for s,t in zip(idx[0],idx[1]):
-            view.edge(str(s),str(t),str(self.edges[s,t]), fontcolor=colour[self.owner[s]][strat[s]==t], color=colour[self.owner[s]][strat[s]==t])
-                    
+            view.node(
+                f"{i}",
+                label=label,
+                shape=shape[owner],
+                fontcolor=colour[owner][strat[i] != -1],
+                color=colour[owner][strat[i] != -1],
+            )
+        idx = np.where(self.edges != mini)
+        for s, t in zip(idx[0], idx[1]):
+            view.edge(
+                str(s),
+                str(t),
+                str(self.edges[s, t]),
+                fontcolor=colour[self.owner[s]][strat[s] == t],
+                color=colour[self.owner[s]][strat[s] == t],
+            )
+
         save_loc = view.render(filename=target_path, view=False, cleanup=True)
 
         return save_loc
@@ -249,9 +325,11 @@ class DiscountedPayoffGame(Game):
     def load_csv(target_path):
         if os.path.isfile(target_path):
             with open(target_path, "r") as file:
-                owner = file.readline().replace("\n","")
+                owner = file.readline().replace("\n", "")
                 owner = owner.split(",")
-                owner=np.array([True if (e=="1" or e=="True") else False for e in owner])
+                owner = np.array(
+                    [True if (e == "1" or e == "True") else False for e in owner]
+                )
                 discount = float(file.readline())
                 edges = file.read().split("\n")
                 edges = [e.split(",") for e in edges]
@@ -260,6 +338,13 @@ class DiscountedPayoffGame(Game):
 
     def save_csv(self, target_path):
         with open(target_path, "w") as file:
-            file.write(",".join(["1" if e else "0" for e in self.owner])+"\n")
-            file.write(str(self.discount)+"\n")
-            file.write("\n".join([",".join([str(f) if f!=mini else "" for f in e]) for e in self.edges]))
+            file.write(",".join(["1" if e else "0" for e in self.owner]) + "\n")
+            file.write(str(self.discount) + "\n")
+            file.write(
+                "\n".join(
+                    [
+                        ",".join([str(f) if f != mini else "" for f in e])
+                        for e in self.edges
+                    ]
+                )
+            )
