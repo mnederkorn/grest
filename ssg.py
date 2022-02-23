@@ -23,6 +23,22 @@ def numba_nanmax_axis1(x):
     return out
 
 
+@jit(nopython=True, cache=True)
+def numba_nanargmax_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.nanargmax(x[i])
+    return out
+
+
+@jit(nopython=True, cache=True)
+def numba_nanargmin_axis1(x):
+    out = np.empty(x.shape[0], dtype=x.dtype)
+    for i in range(x.shape[0]):
+        out[i] = np.nanargmin(x[i])
+    return out
+
+
 class SimpleStochasticGame(Game):
     def __init__(self, owner, edges, avg, stopping):
 
@@ -53,7 +69,7 @@ class SimpleStochasticGame(Game):
     # strats for avg/rng vertices as -1
     def solve_both_kleene_wrap(self):
 
-        value = self.solve_both_kleene(self.owner, self.edges, self.avg, self.stopping)
+        value = self.solve_both_kleene(self.owner, self.edges, self.avg)
 
         strat = np.where(
             self.owner == 2,
@@ -69,7 +85,7 @@ class SimpleStochasticGame(Game):
 
     @staticmethod
     @jit(nopython=True, cache=True)
-    def solve_both_kleene(owner, edges, avg_chance, stopping):
+    def solve_both_kleene(owner, edges, avg_chance):
 
         cur = np.hstack((np.zeros(len(owner)), np.array([0]), np.array([1])))
 
@@ -101,8 +117,6 @@ class SimpleStochasticGame(Game):
             self.stopping
         ), "SSG needs to be stopping to be solved with strategy iteration. To ensure SSG is stopping, generate DPG and convert to SSG via DiscountedPayoffGame.to_ssg."
 
-        p0 = np.where(self.owner == 0)[0]
-        p1 = np.where(self.owner == 1)[0]
         p2 = np.where(self.owner == 2)[0]
 
         if not player:
@@ -122,11 +136,9 @@ class SimpleStochasticGame(Game):
                 -1,
             )
 
-        strat_hist = []
+        while True:
 
-        while not hash(strat.tobytes()) in strat_hist:
-
-            strat_hist.append(hash(strat.tobytes()))
+            strat_hist = strat.copy()
 
             solver = pywraplp.Solver.CreateSolver("GLOP")
 
@@ -175,13 +187,7 @@ class SimpleStochasticGame(Game):
                         np.where(
                             self.edges,
                             self.edges
-                            * (
-                                np.array(
-                                    [v_n.solution_value() for v_n in v[:-2]]
-                                    + [0.0]
-                                    + [1.0]
-                                )
-                            ),
+                            * (np.array([v_n.solution_value() for v_n in v])),
                             -1,
                         ),
                         1,
@@ -195,19 +201,16 @@ class SimpleStochasticGame(Game):
                         np.where(
                             self.edges,
                             self.edges
-                            * (
-                                np.array(
-                                    [v_n.solution_value() for v_n in v[:-2]]
-                                    + [0.0]
-                                    + [1.0]
-                                )
-                            ),
+                            * (np.array([v_n.solution_value() for v_n in v])),
                             2,
                         ),
                         1,
                     ),
                     strat,
                 )
+
+            if np.all(strat_hist == strat):
+                break
 
         return np.array([v_n.solution_value() for v_n in v]), strat
 
@@ -231,6 +234,10 @@ class SimpleStochasticGame(Game):
     def solve_strat(self):
 
         return self.solve_both_kleene_wrap()[1]
+
+    def solve_both(self):
+
+        return self.solve_both_kleene_wrap()
 
     def visualise(self, target_path=None, strat=None, values=None):
 
@@ -303,9 +310,12 @@ class SimpleStochasticGame(Game):
     def load_csv(target_path):
         if os.path.isfile(target_path):
             with open(target_path, "r") as file:
+                typee = str(file.readline().replace("\n", ""))
+                assert typee == "ssg"
                 owner = file.readline().replace("\n", "")
                 owner = owner.split(",")
                 owner = np.array([int(e) for e in owner])
+                stopping = bool(file.readline().replace("\n", ""))
                 edges = [file.readline().replace("\n", "") for n in range(len(owner))]
                 edges = [e.split(",") for e in edges]
                 edges = np.array([[bool(f) for f in e] for e in edges])
@@ -314,11 +324,19 @@ class SimpleStochasticGame(Game):
                 avg = np.array(
                     [[float(f) if f != "" else float(0) for f in e] for e in avg]
                 )
-            return SimpleStochasticGame(owner, edges, avg, False)
+            return SimpleStochasticGame(owner, edges, avg, stopping)
 
-    def save_csv(self, target_path):
+    def save_csv(self, target_path=None):
+        if target_path == None:
+            target_path = os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                "graphs",
+                f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv",
+            )
         with open(target_path, "w") as file:
+            file.write("ssg\n")
             file.write(",".join([str(e) for e in self.owner]) + "\n")
+            file.write(str(self.stopping) + "\n")
             file.write(
                 "\n".join([",".join(["1" if f else "" for f in e]) for e in self.edges])
                 + "\n"
@@ -328,3 +346,4 @@ class SimpleStochasticGame(Game):
                     [",".join([str(f) if f != 0 else "" for f in e]) for e in self.avg]
                 )
             )
+        return target_path

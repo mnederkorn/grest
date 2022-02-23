@@ -5,7 +5,6 @@ from graphviz import Digraph
 from tempfile import gettempdir
 import copy
 from numba import jit
-import pulp
 from ortools.linear_solver import pywraplp
 
 
@@ -55,50 +54,6 @@ class DiscountedPayoffGame(Game):
         else:
             return cls(*super().generate(n, p, w), d)
 
-    def to_ssg(self):
-
-        W = np.max((np.max(np.abs(np.where(self.edges != mini, self.edges, 0))), 1))
-
-        edges = np.where(self.edges != mini, self.edges + W, self.edges)
-
-        f3 = np.count_nonzero(self.edges != mini)
-
-        vertices = len(self.owner) + f3
-
-        f3pos = np.where(self.edges != mini)
-
-        ssg_edges = np.full((vertices, vertices + 2), False)
-
-        owner = np.hstack((self.owner, np.full(f3, 2, dtype=np.uint8)))
-
-        avg_chance = np.zeros((f3, vertices + 2))
-
-        strat_map = np.zeros(f3, dtype=int)
-
-        for i, edge in enumerate(zip(f3pos[0], f3pos[1])):
-            ssg_edges[edge[0], i + len(self.owner)] = True
-            ssg_edges[i + len(self.owner), edge[1]] = True
-            strat_map[i] = edge[1]
-            ssg_edges[i + len(self.owner), -1] = True
-            ssg_edges[i + len(self.owner), -2] = True
-            avg_chance[i, edge[1]] = self.discount
-            avg_chance[i, -2] = (1 - self.discount) * (1 - (edges[edge] / (2 * W)))
-            avg_chance[i, -1] = (1 - self.discount) * (edges[edge] / (2 * W))
-
-        return SimpleStochasticGame(owner, ssg_edges, avg_chance, True), strat_map, W
-
-    def solve_both_ssg(self):
-
-        ssg, smap, W = self.to_ssg()
-
-        v, s = ssg.solve_both_kleene_wrap()
-
-        v = (v[: len(self.owner)] * 2 * W) - W
-
-        s = smap[(s - len(self.owner))[: len(self.owner)]]
-
-        return v, s
-
     def solve_both_kleene_wrap(self):
 
         return self.solve_both_kleene(self.owner, self.edges, self.discount)
@@ -127,7 +82,6 @@ class DiscountedPayoffGame(Game):
 
             max_err = np.amax(np.abs(cur - old))
 
-            # iterate until max float precision is hit
             if max_err < 1e-14:
                 break
 
@@ -144,9 +98,6 @@ class DiscountedPayoffGame(Game):
         return cur, strat
 
     def solve_both_strat_iter(self, player):
-
-        p0 = np.where(self.owner == False)[0]
-        p1 = np.where(self.owner == True)[0]
 
         if not player:
             strat = np.where(
@@ -165,13 +116,9 @@ class DiscountedPayoffGame(Game):
                 -1,
             )
 
-        strat_hist = []
+        while True:
 
-        while not hash(strat.tobytes()) in strat_hist:
-
-            strat_hist.append(hash(strat.tobytes()))
-
-            self.edges = np.where(self.edges != mini, self.edges, mini)
+            strat_hist = strat.copy()
 
             weights = self.edges[np.where(self.edges != mini)]
             W = max(abs(np.amin(weights)), abs(np.amax(weights)))
@@ -259,6 +206,9 @@ class DiscountedPayoffGame(Game):
                     strat,
                 )
 
+            if np.all(strat_hist == strat):
+                break
+
         return np.array([v_n.solution_value() for v_n in v]), strat
 
     def solve_value(self, strat=None):
@@ -281,6 +231,54 @@ class DiscountedPayoffGame(Game):
     def solve_strat(self):
 
         return self.solve_both_kleene_wrap()[1]
+
+    def solve_both(self):
+
+        return self.solve_both_kleene_wrap()
+
+    def to_ssg(self):
+
+        W = np.max((np.max(np.abs(np.where(self.edges != mini, self.edges, 0))), 1))
+
+        edges = np.where(self.edges != mini, (self.edges + W) / (2 * W), self.edges)
+
+        f3 = np.count_nonzero(self.edges != mini)
+
+        vertices = len(self.owner) + f3
+
+        f3pos = np.where(self.edges != mini)
+
+        ssg_edges = np.full((vertices, vertices + 2), False)
+
+        owner = np.hstack((self.owner, np.full(f3, 2, dtype=np.uint8)))
+
+        avg_chance = np.zeros((f3, vertices + 2))
+
+        strat_map = np.zeros(f3, dtype=int)
+
+        for i, edge in enumerate(zip(f3pos[0], f3pos[1])):
+            ssg_edges[edge[0], i + len(self.owner)] = True
+            ssg_edges[i + len(self.owner), edge[1]] = True
+            strat_map[i] = edge[1]
+            ssg_edges[i + len(self.owner), -1] = True
+            ssg_edges[i + len(self.owner), -2] = True
+            avg_chance[i, edge[1]] = self.discount
+            avg_chance[i, -2] = (1 - self.discount) * (1 - (edges[edge]))
+            avg_chance[i, -1] = (1 - self.discount) * (edges[edge])
+
+        return SimpleStochasticGame(owner, ssg_edges, avg_chance, True), strat_map, W
+
+    def solve_both_ssg(self):
+
+        ssg, smap, W = self.to_ssg()
+
+        v, s = ssg.solve_both()
+
+        v = (v[: len(self.owner)] * 2 * W) - W
+
+        s = smap[(s - len(self.owner))[: len(self.owner)]]
+
+        return v, s
 
     def visualise(self, target_path=None, strat=None, values=None):
 
@@ -325,6 +323,8 @@ class DiscountedPayoffGame(Game):
     def load_csv(target_path):
         if os.path.isfile(target_path):
             with open(target_path, "r") as file:
+                typee = str(file.readline().replace("\n", ""))
+                assert typee == "dpg"
                 owner = file.readline().replace("\n", "")
                 owner = owner.split(",")
                 owner = np.array(
@@ -336,8 +336,15 @@ class DiscountedPayoffGame(Game):
                 edges = np.array([[int(f) if f else mini for f in e] for e in edges])
             return DiscountedPayoffGame(owner, edges, discount)
 
-    def save_csv(self, target_path):
+    def save_csv(self, target_path=None):
+        if target_path == None:
+            target_path = os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                "graphs",
+                f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv",
+            )
         with open(target_path, "w") as file:
+            file.write("dpg\n")
             file.write(",".join(["1" if e else "0" for e in self.owner]) + "\n")
             file.write(str(self.discount) + "\n")
             file.write(
@@ -348,3 +355,4 @@ class DiscountedPayoffGame(Game):
                     ]
                 )
             )
+        return target_path

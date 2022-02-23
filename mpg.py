@@ -17,14 +17,6 @@ def numba_min_axis1(x):
 
 
 @jit(nopython=True, cache=True)
-def numba_nanmin_axis1(x):
-    out = np.empty(x.shape[0], dtype=x.dtype)
-    for i in range(x.shape[0]):
-        out[i] = np.nanmin(x[i])
-    return out
-
-
-@jit(nopython=True, cache=True)
 def numba_max_axis1(x):
     out = np.empty(x.shape[0], dtype=x.dtype)
     for i in range(x.shape[0]):
@@ -32,15 +24,6 @@ def numba_max_axis1(x):
     return out
 
 
-@jit(nopython=True, cache=True)
-def numba_nanmax_axis1(x):
-    out = np.empty(x.shape[0], dtype=x.dtype)
-    for i in range(x.shape[0]):
-        out[i] = np.nanmax(x[i])
-    return out
-
-
-@staticmethod
 @jit(nopython=True, cache=True)
 def trunc(n, v):
 
@@ -76,35 +59,6 @@ def Q_sub_sup(n, mid):
     return np.array([l1[ar1], r[ar1]], dtype=int), np.array(
         [l2[ar2], r[ar2]], dtype=int
     )
-
-
-def solve_value_eg_alg(owner, edges, lower, upper):
-
-    a1, a2 = Q_sub_sup(len(owner), (lower + upper) / 2)
-
-    e1 = np.where(edges != mini, (a1[1] * edges) - a1[0], mini)
-    e2 = np.where(edges != mini, (-a1[1] * edges) + a1[0], mini)
-
-    f1 = EnergyGame(owner, e1).solve_value()
-    f2 = EnergyGame(~owner, e2).solve_value()
-
-    v = np.empty(len(owner), dtype=float)
-
-    v = np.where((f1 != -1) & (f2 != -1), a1[0] / a1[1], v)
-
-    v1 = np.where(f1 == -1)[0]
-    v2 = np.where(f2 == -1)[0]
-
-    if len(v1) != 0:
-        v[v1] = solve_value_eg_alg(
-            owner[v1], edges[np.ix_(v1, v1)], lower, a1[0] / a1[1]
-        )
-    if len(v2) != 0:
-        v[v2] = solve_value_eg_alg(
-            owner[v2], edges[np.ix_(v2, v2)], a2[0] / a2[1], upper
-        )
-
-    return v
 
 
 def solve_both_eg_alg(owner, edges, lower, upper):
@@ -177,8 +131,6 @@ class MeanPayoffGame(Game):
         x = np.where(edges != mini, edges, maxi2 - ((k * W) + 1))
         y = np.where(edges != mini, edges, mini2 + ((k * W) + 1))
 
-        # edges = np.where(owner, x, y)
-
         edges = np.empty((len(owner), len(owner)), dtype=edges.dtype)
         for n, (i, j, l) in enumerate(zip(owner, x, y)):
             if i:
@@ -237,13 +189,11 @@ class MeanPayoffGame(Game):
 
         return DiscountedPayoffGame(self.owner, self.edges, discount)
 
-    def solve_both_dpg(self, player):
+    def solve_both_dpg(self):
 
         dpg = self.to_dpg()
 
-        # x = dpg.solve_both_strat_iter(player)
-
-        x = dpg.to_ssg()[0].solve_both_strat_iter(player)
+        x = dpg.solve_both()
 
         v, s = x
 
@@ -254,12 +204,6 @@ class MeanPayoffGame(Game):
         W = np.max(np.abs(np.where(self.edges != mini, self.edges, 0)))
 
         return solve_both_eg_alg(self.owner, self.edges, -W, W)
-
-    def solve_value_eg(self):
-
-        W = np.max(np.abs(np.where(self.edges != mini, self.edges, 0)))
-
-        return solve_value_eg_alg(self.owner, self.edges, -W, W)
 
     def solve_value(self, strat=None):
 
@@ -323,6 +267,8 @@ class MeanPayoffGame(Game):
     def load_csv(target_path):
         if os.path.isfile(target_path):
             with open(target_path, "r") as file:
+                typee = str(file.readline().replace("\n", ""))
+                assert typee == "mpg"
                 owner = file.readline().replace("\n", "")
                 owner = owner.split(",")
                 owner = np.array(
@@ -333,8 +279,15 @@ class MeanPayoffGame(Game):
                 edges = np.array([[int(f) if f else mini for f in e] for e in edges])
             return MeanPayoffGame(owner, edges)
 
-    def save_csv(self, target_path):
+    def save_csv(self, target_path=None):
+        if target_path == None:
+            target_path = os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                "graphs",
+                f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv",
+            )
         with open(target_path, "w") as file:
+            file.write("mpg\n")
             file.write(",".join(["1" if e else "0" for e in self.owner]) + "\n")
             file.write(
                 "\n".join(
@@ -344,3 +297,4 @@ class MeanPayoffGame(Game):
                     ]
                 )
             )
+        return target_path

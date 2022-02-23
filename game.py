@@ -57,7 +57,7 @@ class Game:
         )
         return owner, edges
 
-    def save(self, target_path=None):
+    def save_bin(self, target_path=None):
 
         if target_path == None:
             target_path = os.path.join(
@@ -72,7 +72,7 @@ class Game:
         return target_path
 
     @staticmethod
-    def load(target_path):
+    def load_bin(target_path):
         if os.path.isfile(target_path):
             with open(target_path, "rb") as file:
                 try:

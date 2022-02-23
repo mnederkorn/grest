@@ -153,7 +153,7 @@ class ParityGame(Game):
 
         return MeanPayoffGame(self.owner, edges)
 
-    def solve_both_mpg(self, player):
+    def solve_value_mpg(self):
 
         prios_k = np.argsort(self.priorities)
         steps = self.priorities[prios_k][1:] - self.priorities[prios_k][:-1]
@@ -165,11 +165,9 @@ class ParityGame(Game):
 
         mpg = g.to_mpg()
 
-        x = mpg.solve_both_dpg(player)
+        v = mpg.solve_value()
 
-        v, s = x
-
-        return v < 0, s
+        return v < 0
 
     def solve_strat_mpg(self):
 
@@ -247,6 +245,8 @@ class ParityGame(Game):
     def load_csv(target_path):
         if os.path.isfile(target_path):
             with open(target_path, "r") as file:
+                typee = str(file.readline().replace("\n", ""))
+                assert typee == "pg"
                 owner = file.readline().replace("\n", "")
                 owner = owner.split(",")
                 owner = np.array(
@@ -262,10 +262,18 @@ class ParityGame(Game):
                 )
             return ParityGame(owner, edges, priorities)
 
-    def save_csv(self, target_path):
+    def save_csv(self, target_path=None):
+        if target_path == None:
+            target_path = os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                "graphs",
+                f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv",
+            )
         with open(target_path, "w") as file:
+            file.write("pg\n")
             file.write(",".join(["1" if e else "0" for e in self.owner]) + "\n")
             file.write(",".join([str(e) for e in self.priorities]) + "\n")
             file.write(
                 "\n".join([",".join(["1" if f else "" for f in e]) for e in self.edges])
             )
+        return target_path

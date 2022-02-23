@@ -11,7 +11,7 @@ from dpg import DiscountedPayoffGame
 from ssg import SimpleStochasticGame
 from eg import EnergyGame
 from os import remove
-from os.path import join, dirname, realpath
+from os.path import join, dirname, realpath, isfile
 from datetime import datetime
 import numpy as np
 
@@ -475,7 +475,9 @@ class Gui:
         file = filedialog.askopenfilename(
             parent=self.top,
             initialdir=join(dirname(realpath(__file__)), "graphs"),
-            filetypes=[("binary", ".bin")],
+            filetypes=[
+                ("csv, binary", ".csv .bin"),
+            ],
         )
 
         if file:
@@ -484,7 +486,22 @@ class Gui:
             if hasattr(self, "strats"):
                 del self.strats
             self.glob_opt.config(state="normal")
-            self.game = Game.load(file)
+            if file.endswith(".bin"):
+                self.game = Game.load_bin(file)
+            elif file.endswith(".csv"):
+                if isfile(file):
+                    with open(file, "r") as file_:
+                        typee = str(file_.readline().replace("\n", ""))
+                    if typee == "pg":
+                        self.game = ParityGame.load_csv(file)
+                    elif typee == "mpg":
+                        self.game = MeanPayoffGame.load_csv(file)
+                    elif typee == "eg":
+                        self.game = EnergyGame.load_csv(file)
+                    elif typee == "dpg":
+                        self.game = DiscountedPayoffGame.load_csv(file)
+                    elif typee == "ssg":
+                        self.game = SimpleStochasticGame.load_csv(file)
             self.scale = 1.0
             self.render()
 
@@ -494,12 +511,15 @@ class Gui:
             file = filedialog.asksaveasfilename(
                 parent=self.top,
                 initialdir=join(dirname(realpath(__file__)), "graphs"),
-                initialfile=f"{self.game.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.bin",
-                filetypes=[("binary", ".bin")],
+                initialfile=f"{self.game.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv",
+                filetypes=[("csv", ".csv"), ("binary", ".bin")],
                 defaultextension=".bin",
             )
             if file:
-                self.game.save(file)
+                if file.endswith(".bin"):
+                    self.game.save_bin(file)
+                elif file.endswith(".csv"):
+                    self.game.save_csv(file)
 
     def scroll_start(self, event):
         self.canvas.scan_mark(event.x, event.y)

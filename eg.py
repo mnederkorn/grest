@@ -18,14 +18,6 @@ def numba_min_axis1(x):
 
 
 @jit(nopython=True, cache=True)
-def numba_max_axis1(x):
-    out = np.empty(x.shape[0], dtype=x.dtype)
-    for i in range(x.shape[0]):
-        out[i] = np.max(x[i])
-    return out
-
-
-@jit(nopython=True, cache=True)
 def numba_argmax_axis1(x):
     out = np.empty(x.shape[0], dtype=x.dtype)
     for i in range(x.shape[0]):
@@ -39,14 +31,6 @@ def numba_argmin_axis0(x):
     for i in range(x.shape[0]):
         out[i] = np.argmin(x[:, i])
     return out
-
-
-@jit(nopython=True, cache=True)
-def numba_min_initial(x):
-    if len(x) != 0:
-        return np.min(x)
-    else:
-        return int(-1)
 
 
 @jit(nopython=True, cache=True)
@@ -143,7 +127,6 @@ def find_all_negative_cycle_nodes(edges):
 
     neg_strat = np.full(len(edges), -1, dtype=np.int64)
 
-    # cycle_nodes = np.array([],dtype=edges.dtype)
     cycle_nodes = np.full(len(edges), False)
 
     while True:
@@ -354,16 +337,9 @@ class EnergyGame(Game):
 
     def solve_both_strat_iter_below(self):
 
-        p0 = np.where(self.owner == False)[0]
         p1 = np.where(self.owner == True)[0]
 
-        nW = np.max(
-            (
-                len(self.owner)
-                * np.max(np.abs(self.edges[np.where(self.edges != mini)])),
-                1,
-            )
-        )
+        nW = len(self.owner) * np.max(np.abs(self.edges[np.where(self.edges != mini)]))
 
         edges_p1 = self.edges[np.ix_(p1, p1)]
 
@@ -400,11 +376,9 @@ class EnergyGame(Game):
             -1,
         )
 
-        strat_hist = []
+        while True:
 
-        while not hash(strat.tobytes()) in strat_hist:
-
-            strat_hist.append(hash(strat.tobytes()))
+            strat_hist = strat.copy()
 
             f = np.zeros(len(owner), dtype=int)
 
@@ -436,6 +410,9 @@ class EnergyGame(Game):
 
             strat = np.where(owner & g, np.argmax(edges_weight, 1), strat)
 
+            if np.all(strat_hist == strat):
+                break
+
         full = np.full(self.edges.shape[0], -1, dtype=np.int32)
 
         f = np.where(f < nW, f, -1)[:-1]
@@ -457,11 +434,6 @@ class EnergyGame(Game):
 
         p0 = np.where(self.owner == False)[0]
         p1 = np.where(self.owner == True)[0]
-
-        # M_(G^gamma)
-        max_cycle_cost = -np.sum(
-            np.min(np.clip(self.edges, mini, 0) * (self.edges != mini), 1)
-        )
 
         nW = np.max(
             (
@@ -501,8 +473,6 @@ class EnergyGame(Game):
         strat = np.where(
             owner, -1, np.full(len(edges), edges.shape[0] - 1, dtype=np.int32)
         )
-
-        strat_hist = np.empty(strat.shape)
 
         while True:
 
@@ -550,7 +520,7 @@ class EnergyGame(Game):
 
                 v_ = np.ones(len(v), dtype=bool)
 
-                for x in count():
+                while True:
 
                     v_h = v_.copy()
 
@@ -619,11 +589,15 @@ class EnergyGame(Game):
             for i in np.where(strat != -1)[0]:
                 edges[i, strat[i]] = self.edges[i, strat[i]]
 
-            return EnergyGame(self.owner, edges).solve_value_kleene()
+            return EnergyGame(self.owner, edges).solve_both_bcdgr_wrap()[0]
 
         else:
 
-            return self.solve_value_kleene()
+            return self.solve_both_bcdgr_wrap()[0]
+
+    def solve_strat(self):
+
+        return self.solve_both_bcdgr_wrap()[1]
 
     def solve_both(self, strat=None):
 
@@ -639,10 +613,6 @@ class EnergyGame(Game):
         else:
 
             return self.solve_both_strat_iter_above()
-
-    def solve_strat(self):
-
-        return self.solve_both_bcdgr_wrap()[1]
 
     def visualise(self, target_path=None, strat=None, values=None):
 
@@ -691,6 +661,8 @@ class EnergyGame(Game):
     def load_csv(target_path):
         if os.path.isfile(target_path):
             with open(target_path, "r") as file:
+                typee = str(file.readline().replace("\n", ""))
+                assert typee == "eg"
                 owner = file.readline().replace("\n", "")
                 owner = owner.split(",")
                 owner = np.array(
@@ -701,8 +673,15 @@ class EnergyGame(Game):
                 edges = np.array([[int(f) if f else mini for f in e] for e in edges])
             return EnergyGame(owner, edges)
 
-    def save_csv(self, target_path):
+    def save_csv(self, target_path=None):
+        if target_path == None:
+            target_path = os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                "graphs",
+                f"{self.__class__.__name__}_{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.csv",
+            )
         with open(target_path, "w") as file:
+            file.write("eg\n")
             file.write(",".join(["1" if e else "0" for e in self.owner]) + "\n")
             file.write(
                 "\n".join(
@@ -712,3 +691,4 @@ class EnergyGame(Game):
                     ]
                 )
             )
+        return target_path
