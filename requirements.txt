@@ -1,0 +1,5 @@
+numpy==1.20.3
+numba==0.54.1
+graphviz==0.16
+ortools==9.2.9972
+Pillow==9.2.0
